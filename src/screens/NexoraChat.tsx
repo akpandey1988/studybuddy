@@ -1,61 +1,84 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useRef } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SendIcon } from '../components/Icons';
+import { ChatInput } from '../components/ChatInput';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
+const QUICK_REPLIES = ['4/7', '5/9', 'Show me again'];
+
 export function NexoraChatScreen() {
-  const { actions } = useApp();
+  const { s, actions } = useApp();
+  const scrollRef = useRef<ScrollView>(null);
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Pressable onPress={actions.goHome} hitSlop={10}><Text style={styles.back}>‹</Text></Pressable>
-        <View style={styles.avatar}><Text style={styles.avatarText}>N</Text></View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Nexora</Text>
-          <Text style={styles.subtitle}>Fractions · day 4 lesson</Text>
-        </View>
-        <View style={styles.timer}><Text style={styles.timerText}>12:00 left</Text></View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.thread}>
-        <Bubble>Right — 3/5 vs 5/8. Before any maths: which one <Text style={{ fontStyle: 'italic' }}>feels</Text> bigger to you?</Bubble>
-        <Bubble mine>5/8, because 8 is bigger</Bubble>
-        <Bubble>Good honest answer, and it's the trap most people fall into. A bigger bottom number means <Text style={{ fontWeight: '700' }}>smaller slices</Text>. Look:</Bubble>
-
-        <View style={styles.fractionCard}>
-          <View style={{ gap: 5 }}>
-            <Text style={styles.fractionLabel}>3/5 = 24/40</Text>
-            <View style={styles.fractionBarRow}>
-              <View style={[styles.fractionSeg, { flex: 3, borderTopLeftRadius: 6, borderBottomLeftRadius: 6, backgroundColor: colors.accent400 }]} />
-              <View style={[styles.fractionSeg, { flex: 2, borderTopRightRadius: 6, borderBottomRightRadius: 6, backgroundColor: colors.neutral200 }]} />
-            </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.header}>
+          <Pressable onPress={actions.goHome} hitSlop={10}><Text style={styles.back}>‹</Text></Pressable>
+          <View style={styles.avatar}><Text style={styles.avatarText}>N</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Nexora</Text>
+            <Text style={styles.subtitle}>Fractions · day 4 lesson</Text>
           </View>
-          <View style={{ gap: 5 }}>
-            <Text style={styles.fractionLabel}>5/8 = 25/40</Text>
-            <View style={styles.fractionBarRow}>
-              <View style={[styles.fractionSeg, { flex: 5, borderTopLeftRadius: 6, borderBottomLeftRadius: 6, backgroundColor: colors.accent2_500 }]} />
-              <View style={[styles.fractionSeg, { flex: 3, borderTopRightRadius: 6, borderBottomRightRadius: 6, backgroundColor: colors.neutral200 }]} />
+          <View style={styles.timer}><Text style={styles.timerText}>12:00 left</Text></View>
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.thread}
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Bubble>Right — 3/5 vs 5/8. Before any maths: which one <Text style={{ fontStyle: 'italic' }}>feels</Text> bigger to you?</Bubble>
+          <Bubble mine>5/8, because 8 is bigger</Bubble>
+          <Bubble>Good honest answer, and it's the trap most people fall into. A bigger bottom number means <Text style={{ fontWeight: '700' }}>smaller slices</Text>. Look:</Bubble>
+
+          <View style={styles.fractionCard}>
+            <View style={{ gap: 5 }}>
+              <Text style={styles.fractionLabel}>3/5 = 24/40</Text>
+              <View style={styles.fractionBarRow}>
+                <View style={[styles.fractionSeg, { flex: 3, borderTopLeftRadius: 6, borderBottomLeftRadius: 6, backgroundColor: colors.accent400 }]} />
+                <View style={[styles.fractionSeg, { flex: 2, borderTopRightRadius: 6, borderBottomRightRadius: 6, backgroundColor: colors.neutral200 }]} />
+              </View>
             </View>
+            <View style={{ gap: 5 }}>
+              <Text style={styles.fractionLabel}>5/8 = 25/40</Text>
+              <View style={styles.fractionBarRow}>
+                <View style={[styles.fractionSeg, { flex: 5, borderTopLeftRadius: 6, borderBottomLeftRadius: 6, backgroundColor: colors.accent2_500 }]} />
+                <View style={[styles.fractionSeg, { flex: 3, borderTopRightRadius: 6, borderBottomRightRadius: 6, backgroundColor: colors.neutral200 }]} />
+              </View>
+            </View>
+            <Text style={styles.fractionFooter}>One slice out of forty apart.</Text>
           </View>
-          <Text style={styles.fractionFooter}>One slice out of forty apart.</Text>
-        </View>
 
-        <Bubble>Your turn: 4/7 or 5/9?</Bubble>
+          <Bubble>Your turn: 4/7 or 5/9?</Bubble>
 
-        <View style={styles.chipRow}>
-          <View style={styles.replyChip}><Text style={styles.replyChipText}>4/7</Text></View>
-          <View style={styles.replyChip}><Text style={styles.replyChipText}>5/9</Text></View>
-          <View style={styles.replyChipMuted}><Text style={styles.replyChipMutedText}>Show me again</Text></View>
-        </View>
-      </ScrollView>
+          {s.nexoraMsgs.length === 0 && (
+          <View style={styles.chipRow}>
+            {QUICK_REPLIES.map((label, i) => {
+              const muted = i === QUICK_REPLIES.length - 1;
+              return (
+                <Pressable
+                  key={label}
+                  onPress={() => actions.sendNexora(label)}
+                  style={muted ? styles.replyChipMuted : styles.replyChip}
+                >
+                  <Text style={muted ? styles.replyChipMutedText : styles.replyChipText}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          )}
 
-      <View style={styles.inputBar}>
-        <View style={styles.inputField}><Text style={styles.inputPlaceholder}>Type or say your answer…</Text></View>
-        <View style={styles.sendBtn}><SendIcon size={22} /></View>
-      </View>
+          {s.nexoraMsgs.map((m) => <Bubble key={m.id} mine={m.mine}>{m.text}</Bubble>)}
+        </ScrollView>
+
+        <ChatInput placeholder="Type or say your answer…" onSend={actions.sendNexora} />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -108,17 +131,4 @@ const styles = StyleSheet.create({
     paddingVertical: 9, paddingHorizontal: 15,
   },
   replyChipMutedText: { fontFamily: fonts.bodyBold, fontSize: 14, fontWeight: '700', color: colors.neutral700 },
-  inputBar: {
-    padding: 12, paddingHorizontal: 20, backgroundColor: '#fff', borderTopWidth: 2, borderTopColor: colors.neutral200,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-  },
-  inputField: {
-    flex: 1, borderRadius: 999, backgroundColor: colors.neutral100, borderWidth: 2, borderColor: colors.neutral200,
-    paddingVertical: 12, paddingHorizontal: 16,
-  },
-  inputPlaceholder: { fontFamily: fonts.body, fontSize: 15, color: colors.neutral600 },
-  sendBtn: {
-    width: 46, height: 46, borderRadius: 999, backgroundColor: colors.accent,
-    alignItems: 'center', justifyContent: 'center',
-  },
 });

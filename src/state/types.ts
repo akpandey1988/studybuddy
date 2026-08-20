@@ -17,6 +17,12 @@ export type Exam = {
   baselineDone: boolean;
 };
 
+export type ChatMessage = {
+  id: number;
+  text: string;
+  mine: boolean;
+};
+
 export type AppData = {
   route: Route;
   phone: string;
@@ -32,6 +38,10 @@ export type AppData = {
   draftSubject: string | null;
   draftDays: number;
   nextId: number;
+  nexoraMsgs: ChatMessage[];
+  friendMsgs: ChatMessage[];
+  friendQuery: string;
+  nextMsgId: number;
 };
 
 export type TopicLevel = 'Not tested' | 'Needs work' | 'Getting there' | 'Strong';

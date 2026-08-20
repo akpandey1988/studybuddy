@@ -2,7 +2,8 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, catFor, dateLabel } from '../data/catalog';
 import type { AppData, Exam, ExamStats, Route, TopicLevel } from './types';
 
-// Ported 1:1 from the Component class in StudyBuddy Prototype.dc.html.
+// Ported 1:1 from the Component class in StudyBuddy Prototype.dc.html, plus the
+// chat threads below — the prototype drew those screens but never wired them up.
 
 function examStats(exam: Exam): ExamStats {
   const c = catFor(exam.subject);
@@ -35,10 +36,40 @@ function examStats(exam: Exam): ExamStats {
   };
 }
 
+// The thread on screen is mid-way through the "4/7 or 5/9" question, so replies
+// answer that one; anything else gets a nudge back to the same method.
+function nexoraReply(text: string): string {
+  const t = text.toLowerCase().replace(/\s+/g, '');
+  if (t.indexOf('4/7') >= 0) {
+    return "That's it. 4/7 is 36/63 and 5/9 is 35/63 — you win by one sixty-third. Same trick as the last one.";
+  }
+  if (t.indexOf('5/9') >= 0) {
+    return 'Close — flip it. 4/7 is 36/63 and 5/9 is 35/63, so 4/7 is the bigger one. The larger bottom number made the slices smaller again.';
+  }
+  if (t.indexOf('again') >= 0 || t.indexOf('showme') >= 0) {
+    return 'Sure. Give both the same bottom number, then just compare the tops — 7 and 9 both fit into 63.';
+  }
+  if (t.indexOf('notsure') >= 0 || t.indexOf('dontknow') >= 0 || t.indexOf("don'tknow") >= 0 || t.indexOf('idk') >= 0) {
+    return "That's useful to know, not a problem. Start by making the bottoms match: 7 and 9 both go into 63.";
+  }
+  return "Got it. Work it through and tell me what you get for 4/7 versus 5/9 — I'll check it.";
+}
+
+const ISHITA_REPLIES = [
+  'ok wait let me try it',
+  'same, nexora made me redo that one twice',
+  'send me your working',
+  'study room in 5?',
+  'yes ok',
+];
+
+const REPLY_DELAY_MS = 700;
+
 const initialState: AppData = {
   route: 'login', phone: '', otp: '', name: '', grade: null, board: null, prime: false,
   exams: [], activeId: null, qi: 0, sel: null,
   draftSubject: null, draftDays: 30, nextId: 1,
+  nexoraMsgs: [], friendMsgs: [], friendQuery: '', nextMsgId: 1,
 };
 
 function useAppStateImpl() {
@@ -182,6 +213,42 @@ function useAppStateImpl() {
         || p.exams.some((e) => e.syllabus && !e.baselineDone);
       return { ...p, route: missing ? 'exams' : 'home' };
     }),
+
+    setFriendQuery: (v: string) => setS((p) => ({ ...p, friendQuery: v })),
+
+    sendNexora: (text: string) => {
+      const body = text.trim();
+      if (!body) return;
+      setS((p) => ({
+        ...p,
+        nexoraMsgs: p.nexoraMsgs.concat([{ id: p.nextMsgId, text: body, mine: true }]),
+        nextMsgId: p.nextMsgId + 1,
+      }));
+      setTimeout(() => setS((p) => ({
+        ...p,
+        nexoraMsgs: p.nexoraMsgs.concat([{ id: p.nextMsgId, text: nexoraReply(body), mine: false }]),
+        nextMsgId: p.nextMsgId + 1,
+      })), REPLY_DELAY_MS);
+    },
+
+    sendFriend: (text: string) => {
+      const body = text.trim();
+      if (!body) return;
+      setS((p) => ({
+        ...p,
+        friendMsgs: p.friendMsgs.concat([{ id: p.nextMsgId, text: body, mine: true }]),
+        nextMsgId: p.nextMsgId + 1,
+      }));
+      setTimeout(() => setS((p) => {
+        const sent = p.friendMsgs.filter((m) => m.mine).length;
+        const reply = ISHITA_REPLIES[(sent - 1 + ISHITA_REPLIES.length) % ISHITA_REPLIES.length];
+        return {
+          ...p,
+          friendMsgs: p.friendMsgs.concat([{ id: p.nextMsgId, text: reply, mine: false }]),
+          nextMsgId: p.nextMsgId + 1,
+        };
+      }), REPLY_DELAY_MS);
+    },
 
     pickSubjectPill: (id: number) => setS((p) => ({ ...p, activeId: id })),
     goSecond: () => setS((p) => {

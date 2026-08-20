@@ -1,13 +1,26 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TabBar } from '../components/TabBar';
 import { ChatIcon, PlusIcon, VideoIcon } from '../components/Icons';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
+const ALL_FRIENDS = [
+  { i: 'K', name: 'Kabir', meta: 'Last studied 2h ago' },
+  { i: 'S', name: 'Sara', meta: 'Same exam · 19 Sep' },
+];
+
 export function FriendsScreen() {
-  const { actions } = useApp();
+  const { s, actions } = useApp();
+
+  const query = s.friendQuery.trim().toLowerCase();
+  const match = (name: string) => name.toLowerCase().indexOf(query) >= 0;
+  const showIshita = match('Ishita');
+  const showRehan = match('Rehan');
+  const allFriends = ALL_FRIENDS.filter((f) => match(f.name));
+  const showStudyingNow = showIshita || showRehan || !query;
+  const nothingFound = !showStudyingNow && allFriends.length === 0;
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -17,7 +30,15 @@ export function FriendsScreen() {
           <View style={styles.inviteBtn}><Text style={styles.inviteBtnText}>+ Invite</Text></View>
         </View>
 
-        <View style={styles.searchBar}><Text style={styles.searchPlaceholder}>Search friends</Text></View>
+        <TextInput
+          style={styles.searchBar}
+          value={s.friendQuery}
+          onChangeText={actions.setFriendQuery}
+          placeholder="Search friends"
+          placeholderTextColor={colors.neutral600}
+          returnKeyType="search"
+          autoCorrect={false}
+        />
 
         <View style={styles.bannerRow}>
           <View style={styles.stack}>
@@ -28,31 +49,36 @@ export function FriendsScreen() {
           <Text style={styles.bannerText}>3 friends are on <Text style={{ fontWeight: '700' }}>Fractions</Text> today too.</Text>
         </View>
 
-        <Text style={styles.sectionLabel}>Studying now</Text>
+        {showStudyingNow && <Text style={styles.sectionLabel}>Studying now</Text>}
         <View style={{ gap: 10 }}>
+          {showIshita && (
           <View style={styles.friendRow}>
             <View style={[styles.avatar44, { backgroundColor: colors.accent400 }]}><Text style={styles.avatar44Text}>I</Text></View>
-            <View style={{ flex: 1 }}>
+            <Pressable onPress={actions.goFchat} style={{ flex: 1 }}>
               <Text style={styles.friendName}>Ishita</Text>
               <View style={styles.statusRow}>
                 <View style={styles.dot} />
                 <Text style={styles.statusText}>In a study room · Fractions</Text>
               </View>
-            </View>
+            </Pressable>
             <Pressable onPress={actions.goFchat} style={styles.iconBtnLight}><ChatIcon size={20} color="#8c491a" /></Pressable>
             <Pressable onPress={actions.goCall} style={styles.iconBtnDark}><VideoIcon size={20} color="#fff" /></Pressable>
           </View>
+          )}
+          {showRehan && (
           <View style={styles.friendRow}>
             <View style={[styles.avatar44, { backgroundColor: colors.accent2_500 }]}><Text style={styles.avatar44Text}>R</Text></View>
-            <View style={{ flex: 1 }}>
+            <Pressable onPress={actions.goFchat} style={{ flex: 1 }}>
               <Text style={styles.friendName}>Rehan</Text>
               <View style={styles.statusRow}>
                 <View style={styles.dot} />
                 <Text style={styles.statusText}>Day 6 streak · Decimals</Text>
               </View>
-            </View>
+            </Pressable>
             <Pressable onPress={actions.goFchat} style={styles.iconBtnLight}><ChatIcon size={20} color="#8c491a" /></Pressable>
           </View>
+          )}
+          {!query && (
           <Pressable onPress={actions.goGroup} style={styles.joinRow}>
             <View style={styles.joinIcon}><PlusIcon size={20} /></View>
             <View style={{ flex: 1 }}>
@@ -60,19 +86,22 @@ export function FriendsScreen() {
               <Text style={styles.joinSub}>3 in the room now</Text>
             </View>
           </Pressable>
+          )}
         </View>
 
-        <Text style={styles.sectionLabel}>All friends</Text>
+        {nothingFound && <Text style={styles.emptyText}>No friends match "{s.friendQuery.trim()}".</Text>}
+
+        {allFriends.length > 0 && <Text style={styles.sectionLabel}>All friends</Text>}
         <View style={{ gap: 10 }}>
-          {[{ i: 'K', name: 'Kabir', meta: 'Last studied 2h ago' }, { i: 'S', name: 'Sara', meta: 'Same exam · 19 Sep' }].map((f) => (
-            <View key={f.name} style={styles.plainRow}>
+          {allFriends.map((f) => (
+            <Pressable key={f.name} onPress={actions.goFchat} style={styles.plainRow}>
               <View style={[styles.avatar40, { backgroundColor: colors.neutral400 }]}><Text style={styles.avatar40Text}>{f.i}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.plainName}>{f.name}</Text>
                 <Text style={styles.plainMeta}>{f.meta}</Text>
               </View>
               <Text style={styles.nudge}>Nudge</Text>
-            </View>
+            </Pressable>
           ))}
         </View>
       </ScrollView>
@@ -88,8 +117,11 @@ const styles = StyleSheet.create({
   h2: { fontFamily: fonts.heading, fontSize: 28, color: colors.text },
   inviteBtn: { borderRadius: 999, paddingVertical: 9, paddingHorizontal: 16, backgroundColor: colors.accent100 },
   inviteBtnText: { fontFamily: fonts.bodyExtraBold, fontSize: 14, fontWeight: '800', color: colors.accent800 },
-  searchBar: { borderRadius: 999, backgroundColor: '#fff', borderWidth: 2, borderColor: colors.neutral200, padding: 12, paddingHorizontal: 18 },
-  searchPlaceholder: { fontFamily: fonts.body, fontSize: 15, color: colors.neutral600 },
+  searchBar: {
+    borderRadius: 999, backgroundColor: '#fff', borderWidth: 2, borderColor: colors.neutral200,
+    padding: 12, paddingHorizontal: 18, fontFamily: fonts.body, fontSize: 15, color: colors.text,
+  },
+  emptyText: { fontFamily: fonts.body, fontSize: 14, color: colors.neutral600, paddingVertical: 6 },
   bannerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.accent2_100, borderRadius: radius.lg, padding: 16, paddingHorizontal: 18 },
   stack: { flexDirection: 'row' },
   stackAvatar: { width: 36, height: 36, borderRadius: 999, borderWidth: 2.5, borderColor: colors.accent2_100, alignItems: 'center', justifyContent: 'center' },

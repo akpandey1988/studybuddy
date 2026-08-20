@@ -1,47 +1,58 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useRef } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SendIcon, VideoIcon } from '../components/Icons';
+import { ChatInput } from '../components/ChatInput';
+import { VideoIcon } from '../components/Icons';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
 export function FriendChatScreen() {
-  const { actions } = useApp();
+  const { s, actions } = useApp();
+  const scrollRef = useRef<ScrollView>(null);
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Pressable onPress={actions.goFriends} hitSlop={10}><Text style={styles.back}>‹</Text></Pressable>
-        <View style={styles.avatar}><Text style={styles.avatarText}>I</Text></View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Ishita</Text>
-          <Text style={styles.subtitle}>Studying Fractions</Text>
-        </View>
-        <Pressable onPress={actions.goCall} style={styles.callBtn}><VideoIcon size={20} color="#8c491a" /></Pressable>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.thread}>
-        <Text style={styles.dayChip}>Today</Text>
-        <Bubble>did you get q7 in the ratio drill</Bubble>
-        <Bubble mine>nope. nexora made me redo it twice</Bubble>
-
-        <View style={styles.sharedCard}>
-          <Text style={styles.sharedKicker}>Shared question</Text>
-          <Text style={styles.sharedQ}>If 4 pens cost ₹36, what do 7 pens cost?</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable onPress={actions.goCall} style={styles.solveBtn}><Text style={styles.solveBtnText}>Solve together</Text></Pressable>
-            <Pressable onPress={actions.goNexora} style={styles.askBtn}><Text style={styles.askBtnText}>Ask Nexora</Text></Pressable>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.header}>
+          <Pressable onPress={actions.goFriends} hitSlop={10}><Text style={styles.back}>‹</Text></Pressable>
+          <View style={styles.avatar}><Text style={styles.avatarText}>I</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Ishita</Text>
+            <Text style={styles.subtitle}>Studying Fractions</Text>
           </View>
+          <Pressable onPress={actions.goCall} style={styles.callBtn}><VideoIcon size={20} color="#8c491a" /></Pressable>
         </View>
 
-        <Bubble mine>study room in 5? i'll bring my notes</Bubble>
-        <Bubble>yes ok</Bubble>
-      </ScrollView>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.thread}
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.dayChip}>Today</Text>
+          <Bubble>did you get q7 in the ratio drill</Bubble>
+          <Bubble mine>nope. nexora made me redo it twice</Bubble>
 
-      <View style={styles.inputBar}>
-        <View style={styles.inputField}><Text style={styles.inputPlaceholder}>Message</Text></View>
-        <View style={styles.sendBtn}><SendIcon size={22} /></View>
-      </View>
+          <View style={styles.sharedCard}>
+            <Text style={styles.sharedKicker}>Shared question</Text>
+            <Text style={styles.sharedQ}>If 4 pens cost ₹36, what do 7 pens cost?</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable onPress={actions.goCall} style={styles.solveBtn}><Text style={styles.solveBtnText}>Solve together</Text></Pressable>
+              <Pressable onPress={actions.goNexora} style={styles.askBtn}><Text style={styles.askBtnText}>Ask Nexora</Text></Pressable>
+            </View>
+          </View>
+
+          <Bubble mine>study room in 5? i'll bring my notes</Bubble>
+          <Bubble>yes ok</Bubble>
+
+          {s.friendMsgs.map((m) => <Bubble key={m.id} mine={m.mine}>{m.text}</Bubble>)}
+        </ScrollView>
+
+        <ChatInput placeholder="Message" onSend={actions.sendFriend} />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -86,11 +97,4 @@ const styles = StyleSheet.create({
   solveBtnText: { fontFamily: fonts.bodyBold, fontSize: 13, fontWeight: '700', color: colors.accent2_800 },
   askBtn: { borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, backgroundColor: colors.neutral200 },
   askBtnText: { fontFamily: fonts.bodyBold, fontSize: 13, fontWeight: '700', color: colors.neutral700 },
-  inputBar: {
-    padding: 12, paddingHorizontal: 20, backgroundColor: '#fff', borderTopWidth: 2, borderTopColor: colors.neutral200,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-  },
-  inputField: { flex: 1, borderRadius: 999, backgroundColor: colors.neutral100, borderWidth: 2, borderColor: colors.neutral200, paddingVertical: 12, paddingHorizontal: 16 },
-  inputPlaceholder: { fontFamily: fonts.body, fontSize: 15, color: colors.neutral600 },
-  sendBtn: { width: 46, height: 46, borderRadius: 999, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
 });
