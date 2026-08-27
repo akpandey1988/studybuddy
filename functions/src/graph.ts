@@ -48,7 +48,10 @@ export async function buildConceptGraph(input: BuildGraphInput): Promise<Concept
     '- "difficulty" is 1 (easiest) to 5 (hardest) for this grade.',
   ].join('\n');
 
-  const response = await claude().messages.parse({
+  // Streamed rather than a plain parse call: the SDK refuses non-streaming
+  // requests whose max_tokens implies more than ten minutes of work, and a
+  // whole-syllabus graph at high effort is exactly that.
+  const stream = claude().messages.stream({
     model: MODEL,
     max_tokens: 32000,
     thinking: { type: 'adaptive' },
@@ -58,6 +61,7 @@ export async function buildConceptGraph(input: BuildGraphInput): Promise<Concept
     messages: [{ role: 'user', content: prompt }],
   });
 
+  const response = await stream.finalMessage();
   const parsed = response.parsed_output;
   if (!parsed || parsed.concepts.length === 0) {
     throw new Error('Could not read that syllabus into concepts.');

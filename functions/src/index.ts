@@ -21,7 +21,20 @@ import type { PracticeQuestion } from './check.js';
 initializeApp();
 
 const REGION = 'asia-south1'; // Mumbai — the students are in India.
-const common = { region: REGION, secrets: [ANTHROPIC_API_KEY] };
+
+// Origins allowed to call the callables from a browser. The Expo web build and
+// the dev server need this; native builds are not subject to CORS. Without it
+// the browser's preflight gets no Access-Control-Allow-Origin and every call
+// fails before it reaches the function.
+const CORS_ORIGINS: (string | RegExp)[] = [
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
+  'https://studybuddy-nexora.web.app',
+  'https://studybuddy-nexora.firebaseapp.com',
+];
+
+const callable = { region: REGION, cors: CORS_ORIGINS };
+const common = { ...callable, secrets: [ANTHROPIC_API_KEY] };
 
 function requireUid(auth: { uid: string } | undefined): string {
   if (!auth?.uid) throw new HttpsError('unauthenticated', 'Sign in first.');
@@ -63,7 +76,7 @@ export const buildGraph = onCall(
 );
 
 /** The whole graph plus this student's standing on it. */
-export const getGraph = onCall({ region: REGION }, async (req) => {
+export const getGraph = onCall(callable, async (req) => {
   const uid = requireUid(req.auth);
   const { examId } = req.data ?? {};
   if (!examId) throw new HttpsError('invalid-argument', 'examId is required.');
@@ -72,7 +85,7 @@ export const getGraph = onCall({ region: REGION }, async (req) => {
 });
 
 /** The precise next thing to do, and why. Pure logic — no Claude call. */
-export const nextStep = onCall({ region: REGION }, async (req) => {
+export const nextStep = onCall(callable, async (req) => {
   const uid = requireUid(req.auth);
   const { examId } = req.data ?? {};
   if (!examId) throw new HttpsError('invalid-argument', 'examId is required.');
@@ -120,7 +133,7 @@ export const startCheck = onCall(
  * Keeps the immediate "here's why" feedback the lesson depends on without
  * ever shipping the whole answer key to the client.
  */
-export const answerQuestion = onCall({ region: REGION }, async (req) => {
+export const answerQuestion = onCall(callable, async (req) => {
   const uid = requireUid(req.auth);
   const { examId, checkId, index, pick } = req.data ?? {};
   if (!examId || !checkId || typeof index !== 'number' || typeof pick !== 'number') {
@@ -149,7 +162,7 @@ export const answerQuestion = onCall({ region: REGION }, async (req) => {
 });
 
 /** Grade a check, update mastery, and say what comes next. */
-export const submitCheck = onCall({ region: REGION }, async (req) => {
+export const submitCheck = onCall(callable, async (req) => {
   const uid = requireUid(req.auth);
   const { examId, checkId, picks } = req.data ?? {};
   if (!examId || !checkId || !Array.isArray(picks)) {
@@ -197,7 +210,7 @@ export const submitCheck = onCall({ region: REGION }, async (req) => {
 });
 
 /** The lesson so far, so reopening a concept shows the conversation. */
-export const getThread = onCall({ region: REGION }, async (req) => {
+export const getThread = onCall(callable, async (req) => {
   const uid = requireUid(req.auth);
   const { examId, conceptId } = req.data ?? {};
   if (!examId || !conceptId) throw new HttpsError('invalid-argument', 'examId and conceptId are required.');
@@ -207,7 +220,7 @@ export const getThread = onCall({ region: REGION }, async (req) => {
 });
 
 /** Wipe a concept's lesson thread so the next lesson starts fresh. */
-export const resetThread = onCall({ region: REGION }, async (req) => {
+export const resetThread = onCall(callable, async (req) => {
   const uid = requireUid(req.auth);
   const { examId, conceptId } = req.data ?? {};
   if (!examId || !conceptId) throw new HttpsError('invalid-argument', 'examId and conceptId are required.');

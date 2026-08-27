@@ -242,9 +242,10 @@ function useAppStateImpl() {
         if (list.find((e) => e.id === examId)?.graphStatus === 'ready') go('home');
         else go('exams');
       } catch (e) {
+        // Stay on the building screen — it surfaces the error and offers a way
+        // back. Bouncing to the exam list drops the message on the floor.
         fail(e);
         if (uid) await refreshExams(uid);
-        go('exams');
       } finally {
         setBusy(null);
       }

@@ -31,7 +31,10 @@ export function BuildingScreen() {
         <Text style={styles.h2}>That didn't work</Text>
         <Text style={styles.body}>{error}</Text>
         <View style={styles.actions}>
-          <Text style={styles.link} onPress={() => { actions.clearError(); actions.goExams(); }}>
+          <Text style={styles.link} onPress={() => { actions.clearError(); actions.buildExam(); }}>
+            Try again
+          </Text>
+          <Text style={styles.linkMuted} onPress={() => { actions.clearError(); actions.goExams(); }}>
             Back to my exams
           </Text>
         </View>
@@ -60,6 +63,7 @@ const styles = StyleSheet.create({
   h2: { fontFamily: fonts.heading, fontSize: 30, lineHeight: 34, color: colors.text },
   body: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 16, lineHeight: 23, color: colors.accent2_800 },
   hint: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.neutral700 },
-  actions: { marginTop: 8 },
+  actions: { marginTop: 8, gap: 14 },
   link: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 16, color: colors.accent700 },
+  linkMuted: { fontFamily: fonts.body, fontSize: 15, color: colors.neutral600 },
 });
