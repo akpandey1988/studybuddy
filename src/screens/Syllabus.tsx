@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Screen } from '../components/Screen';
+import { FixedScreen } from '../components/Screen';
 import { BackChevron, CtaButton, Kicker } from '../components/UI';
 import { CameraIcon, CheckIcon, UploadIcon } from '../components/Icons';
 import { CATALOG, dateLabel } from '../data/catalog';
@@ -44,7 +44,8 @@ export function SyllabusScreen() {
   const ready = Boolean(subject) && (Boolean(draftFile) || typed.length > 0 || !typing);
 
   return (
-    <Screen style={styles.content}>
+    <FixedScreen>
+      <View style={styles.content}>
       <View style={styles.headerRow}>
         <BackChevron onPress={actions.goAddsub} />
         <View style={{ gap: 4 }}>
@@ -144,7 +145,8 @@ export function SyllabusScreen() {
         </View>
         <CtaButton label="Build my plan" active={ready} onPress={actions.buildExam} />
       </View>
-    </Screen>
+    </View>
+    </FixedScreen>
   );
 }
 
@@ -167,7 +169,7 @@ function SourceButton({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 66, paddingBottom: 40, gap: 18 },
+  content: { flex: 1, paddingHorizontal: 24, paddingTop: 66, paddingBottom: 40, gap: 18 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   h2: { fontFamily: fonts.heading, fontSize: 28, lineHeight: 31, color: colors.text },
   intro: { fontFamily: fonts.body, fontSize: 15, lineHeight: 22, color: colors.neutral700 },

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Screen } from '../components/Screen';
+import { FixedScreen } from '../components/Screen';
 import { CtaButton, SecondaryButton } from '../components/UI';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius } from '../theme/tokens';
@@ -11,10 +11,12 @@ export function CheckResultScreen() {
 
   if (!result) {
     return (
-      <Screen style={styles.content}>
+      <FixedScreen>
+      <View style={styles.content}>
         <Text style={styles.h2}>No result to show</Text>
         <CtaButton label="Back to today" onPress={actions.finishCheck} style={{ marginTop: 'auto' as const }} />
-      </Screen>
+      </View>
+    </FixedScreen>
     );
   }
 
@@ -28,7 +30,8 @@ export function CheckResultScreen() {
     : `${score} of ${outOf} right — you need ${passMark}. Nexora will come at it a different way, then a fresh check.`;
 
   return (
-    <Screen style={styles.content}>
+    <FixedScreen>
+      <View style={styles.content}>
       <ScrollView contentContainerStyle={{ gap: 16 }} showsVerticalScrollIndicator={false}>
         <View style={[styles.badge, passed ? styles.badgePass : styles.badgeRetry]}>
           <Text style={[styles.badgeText, { color: passed ? colors.accent2_800 : colors.accent800 }]}>
@@ -91,12 +94,13 @@ export function CheckResultScreen() {
           </>
         )}
       </View>
-    </Screen>
+    </View>
+    </FixedScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 66, paddingBottom: 40, gap: 12 },
+  content: { flex: 1, paddingHorizontal: 24, paddingTop: 66, paddingBottom: 40, gap: 12 },
   badge: { alignSelf: 'flex-start', borderRadius: 999, paddingVertical: 7, paddingHorizontal: 14 },
   badgePass: { backgroundColor: colors.accent2_100 },
   badgeRetry: { backgroundColor: colors.accent100 },

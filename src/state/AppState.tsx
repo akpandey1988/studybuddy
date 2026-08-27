@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler } from 'react-native';
 import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, dateLabel } from '../data/catalog';
 import * as backend from '../services/backend';
 import { BackendError, isConfigured, signInGuest, watchAuth } from '../services/firebase';
@@ -47,6 +48,42 @@ function useAppStateImpl() {
   const [error, setError] = useState<string | null>(null);
 
   const go = useCallback((r: Route) => setRoute(r), []);
+
+  /**
+   * Android's hardware back. Without this the OS closes the app from every
+   * screen, because this router is a flat switch with no history to pop.
+   * 'login', 'home' and 'exams' are the roots — backing out of those should
+   * genuinely leave the app.
+   */
+  const BACK_TO: Partial<Record<Route, Route>> = useMemo(() => ({
+    otp: 'login',
+    details: 'otp',
+    prime: 'exams',
+    addsub: 'exams',
+    syllabus: 'addsub',
+    nexora: 'home',
+    check: 'home',
+    checkresult: 'home',
+    progress: 'home',
+    badges: 'progress',
+    friends: 'home',
+    fchat: 'friends',
+    call: 'friends',
+    group: 'friends',
+    parent: 'progress',
+  }), []);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Never strand the student mid-build; that call is already in flight.
+      if (route === 'building') return true;
+      const target = BACK_TO[route];
+      if (!target) return false;
+      setRoute(target);
+      return true;
+    });
+    return () => sub.remove();
+  }, [route, BACK_TO]);
   const fail = useCallback((e: unknown) => {
     setError(e instanceof BackendError ? e.message : (e as Error).message || 'Something went wrong.');
   }, []);

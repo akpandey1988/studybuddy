@@ -12,6 +12,16 @@ npx expo start        # then press i / a / w
 
 Node 20+ is required.
 
+### On a phone
+
+Everything the app uses runs in **Expo Go** — no native build or Android SDK
+needed:
+
+```bash
+npx expo start --lan          # then scan the QR, or:
+adb shell am start -a android.intent.action.VIEW -d "exp://<your-lan-ip>:8081"
+```
+
 ## How it works
 
 The backend keeps a **knowledge graph** per student per exam, and every
@@ -202,6 +212,7 @@ computed on the client any more.
   payload caps a syllabus at ~6 MB, which covers a photo or a normal school
   PDF but not a large scanned document. Firebase Storage is the upgrade path
   if that limit starts biting.
+- **Only tested on Android and web.** iOS has never been run.
 - **App Check is not enforced yet** (see Spend controls). Until it is, the
   global daily cap is the only thing standing between a determined abuser and
   your Anthropic bill — and hitting it locks out real students for the day.

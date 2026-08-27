@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Screen } from '../components/Screen';
+import { FixedScreen } from '../components/Screen';
 import { BackChevron, CtaButton } from '../components/UI';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
@@ -18,27 +18,33 @@ export function CheckScreen() {
 
   if (building) {
     return (
-      <Screen style={styles.centered}>
+      <FixedScreen>
+      <View style={styles.centered}>
         <ActivityIndicator color={colors.accent} />
         <Text style={styles.loadingText}>Building a fresh check on {check.conceptName}…</Text>
         <Text style={styles.loadingHint}>New questions every time, so you can't pass by memory.</Text>
-      </Screen>
+      </View>
+    </FixedScreen>
     );
   }
 
   if (error && checkTotal === 0) {
     return (
-      <Screen style={styles.centered}>
+      <FixedScreen>
+      <View style={styles.centered}>
         <Text style={styles.errorTitle}>Couldn't build the check</Text>
         <Text style={styles.errorBody}>{error}</Text>
         <CtaButton label="Try again" onPress={actions.startCheck} />
         <Pressable onPress={actions.goHome}><Text style={styles.link}>Back to today</Text></Pressable>
-      </Screen>
+      </View>
+    </FixedScreen>
     );
   }
 
   if (!checkQ) {
-    return <Screen style={styles.centered}><Text style={styles.loadingText}>No questions.</Text></Screen>;
+    return <FixedScreen>
+      <View style={styles.centered}><Text style={styles.loadingText}>No questions.</Text></View>
+    </FixedScreen>;
   }
 
   const { sel, revealed, qi } = check;
@@ -49,7 +55,8 @@ export function CheckScreen() {
   const waiting = busy === 'answer' || busy === 'submit';
 
   return (
-    <Screen style={styles.content}>
+    <FixedScreen>
+      <View style={styles.content}>
       <View style={styles.headerRow}>
         <BackChevron onPress={actions.goHome} />
         <View style={styles.progressTrack}>
@@ -110,13 +117,14 @@ export function CheckScreen() {
         onPress={actions.nextCheck}
         style={{ marginTop: 12 }}
       />
-    </Screen>
+    </View>
+    </FixedScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 66, paddingBottom: 40, gap: 18 },
-  centered: { paddingTop: 66, paddingBottom: 40, gap: 14, alignItems: 'center', justifyContent: 'center', flexGrow: 1 },
+  content: { flex: 1, paddingHorizontal: 24, paddingTop: 66, paddingBottom: 40, gap: 18 },
+  centered: { flex: 1, paddingHorizontal: 24, paddingTop: 66, paddingBottom: 40, gap: 14, alignItems: 'center', justifyContent: 'center', flexGrow: 1 },
   loadingText: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 16, color: colors.text, textAlign: 'center' },
   loadingHint: { fontFamily: fonts.body, fontSize: 14, color: colors.neutral600, textAlign: 'center' },
   errorTitle: { fontFamily: fonts.heading, fontSize: 22, color: colors.text, textAlign: 'center' },
