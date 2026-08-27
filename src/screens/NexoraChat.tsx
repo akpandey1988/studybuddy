@@ -7,11 +7,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SendIcon } from '../components/Icons';
 import { useApp } from '../state/AppState';
 import { KICKOFF, NexoraError, isConfigured, streamReply, studentContext } from '../services/nexora';
+import { CHECK_SIZE } from '../data/catalog';
 import type { ChatTurn } from '../state/types';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
 export function NexoraChatScreen() {
-  const { s, active, st, chat, actions } = useApp();
+  const { s, active, st, chat, activeChatKey, focusTopic, topicProgress, actions } = useApp();
 
   const [draft, setDraft] = React.useState('');       // streaming reply, not yet committed
   const [input, setInput] = React.useState('');
@@ -20,10 +21,10 @@ export function NexoraChatScreen() {
 
   const scroller = React.useRef<ScrollView>(null);
   const abort = React.useRef<AbortController | null>(null);
-  const examId = active ? active.id : null;
+  const key = activeChatKey;
 
   const send = React.useCallback(async (turns: ChatTurn[]) => {
-    if (examId === null || !active || !st) return;
+    if (!key || !active || !st) return;
 
     setSending(true);
     setError(null);
@@ -39,38 +40,48 @@ export function NexoraChatScreen() {
         reply += chunk;
         setDraft(reply);
       }
-      if (reply.trim()) actions.appendTurn(examId, { role: 'assistant', content: reply });
+      if (reply.trim()) actions.appendTurn(key, { role: 'assistant', content: reply });
       else setError('Nexora went quiet. Try again.');
     } catch (e) {
       if (!controller.signal.aborted) {
         setError(e instanceof NexoraError ? e.message : `Something went wrong: ${(e as Error).message}`);
       }
       // Keep whatever streamed before the failure so the student doesn't lose it.
-      if (reply.trim()) actions.appendTurn(examId, { role: 'assistant', content: reply });
+      if (reply.trim()) actions.appendTurn(key, { role: 'assistant', content: reply });
     } finally {
       setDraft('');
       setSending(false);
       abort.current = null;
     }
-  }, [examId, active, st, s.name, s.grade, s.board, actions]);
+  }, [key, active, st, s.name, s.grade, s.board, actions]);
 
-  // Open the lesson: a hidden kickoff turn so Claude speaks first.
+  // Open the lesson, or answer the re-teach request the check result queued up.
   const started = React.useRef(false);
   React.useEffect(() => {
-    if (started.current || examId === null || chat.length > 0 || !isConfigured()) return;
-    started.current = true;
-    const kickoff: ChatTurn = { role: 'user', content: KICKOFF, hidden: true };
-    actions.appendTurn(examId, kickoff);
-    send([kickoff]);
-  }, [examId, chat.length, actions, send]);
+    if (started.current || !key || !isConfigured()) return;
+
+    const last = chat[chat.length - 1];
+    if (chat.length === 0) {
+      started.current = true;
+      const kickoff: ChatTurn = { role: 'user', content: KICKOFF, hidden: true };
+      actions.appendTurn(key, kickoff);
+      if (focusTopic) actions.noteLesson(focusTopic);
+      send([kickoff]);
+    } else if (last && last.role === 'user') {
+      // A pending user turn with no reply yet — the re-teach ask from a failed check.
+      started.current = true;
+      if (focusTopic) actions.noteLesson(focusTopic);
+      send(chat);
+    }
+  }, [key, chat, focusTopic, actions, send]);
 
   React.useEffect(() => () => abort.current?.abort(), []);
 
   const onSend = () => {
     const text = input.trim();
-    if (!text || sending || examId === null) return;
+    if (!text || sending || !key) return;
     const turn: ChatTurn = { role: 'user', content: text };
-    actions.appendTurn(examId, turn);
+    actions.appendTurn(key, turn);
     setInput('');
     send(chat.concat([turn]));
   };
@@ -82,6 +93,9 @@ export function NexoraChatScreen() {
 
   const visible = chat.filter((t) => !t.hidden);
   const configured = isConfigured();
+  // Offer the check only once Nexora has actually taught something.
+  const readyToCheck = configured && !sending && !!focusTopic
+    && chat.some((t) => t.role === 'assistant');
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -91,11 +105,11 @@ export function NexoraChatScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Nexora</Text>
           <Text style={styles.subtitle} numberOfLines={1}>
-            {st ? `${st.focus} · ${active?.subject ?? ''}` : 'Getting ready…'}
+            {st ? `${focusTopic} · ${active?.subject ?? ''}` : 'Getting ready…'}
           </Text>
         </View>
         {visible.length > 0 && (
-          <Pressable onPress={() => { started.current = false; if (examId !== null) actions.resetChat(examId); }} hitSlop={8} style={styles.timer}>
+          <Pressable onPress={() => { started.current = false; if (key) actions.resetChat(key); }} hitSlop={8} style={styles.timer}>
             <Text style={styles.timerText}>Restart</Text>
           </Pressable>
         )}
@@ -142,6 +156,19 @@ export function NexoraChatScreen() {
             </Pressable>
           )}
         </ScrollView>
+
+        {readyToCheck && (
+          <Pressable onPress={() => focusTopic && actions.startCheck(focusTopic)} style={styles.checkBar}>
+            <Text style={styles.checkBarLabel}>
+              {topicProgress.attempts > 0 ? 'Try the check again' : "I've got it — check me"}
+            </Text>
+            <Text style={styles.checkBarMeta}>
+              {topicProgress.attempts > 0
+                ? `Attempt ${topicProgress.attempts + 1} · fresh questions`
+                : `${CHECK_SIZE} questions on ${focusTopic}`}
+            </Text>
+          </Pressable>
+        )}
 
         <View style={styles.inputBar}>
           <TextInput
@@ -212,6 +239,12 @@ const styles = StyleSheet.create({
   },
   errorText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.text },
   errorRetry: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent700 },
+  checkBar: {
+    marginHorizontal: 20, marginBottom: 4, backgroundColor: colors.accent2_500,
+    borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: 18, alignItems: 'center', gap: 2,
+  },
+  checkBarLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 15, color: '#fff' },
+  checkBarMeta: { fontFamily: fonts.body, fontSize: 12, color: colors.accent2_100 },
   inputBar: {
     padding: 12, paddingHorizontal: 20, backgroundColor: '#fff', borderTopWidth: 2, borderTopColor: colors.neutral200,
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,

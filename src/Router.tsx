@@ -11,6 +11,8 @@ import { QuizScreen } from './screens/Quiz';
 import { ResultScreen } from './screens/Result';
 import { HomeScreen } from './screens/Home';
 import { NexoraChatScreen } from './screens/NexoraChat';
+import { CheckScreen } from './screens/Check';
+import { CheckResultScreen } from './screens/CheckResult';
 import { ProgressScreen } from './screens/Progress';
 import { BadgesScreen } from './screens/Badges';
 import { FriendsScreen } from './screens/Friends';
@@ -34,6 +36,8 @@ export function Router() {
     case 'result': return <ResultScreen />;
     case 'home': return <HomeScreen />;
     case 'nexora': return <NexoraChatScreen />;
+    case 'check': return <CheckScreen />;
+    case 'checkresult': return <CheckResultScreen />;
     case 'progress': return <ProgressScreen />;
     case 'badges': return <BadgesScreen />;
     case 'friends': return <FriendsScreen />;

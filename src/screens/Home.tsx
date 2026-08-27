@@ -7,7 +7,10 @@ import { examStats, useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
 export function HomeScreen() {
-  const { s, active, st, ready, missingSyllabus, second, secondStats, activeName, readiness, focus, actions } = useApp();
+  const {
+    s, active, st, ready, missingSyllabus, second, secondStats,
+    activeName, readiness, focus, topicProgress, actions,
+  } = useApp();
 
   const dayLine = `Day 4 · ${ready.length} exam${ready.length === 1 ? '' : 's'} running`;
   const firstName = s.name.trim().split(' ')[0] || 'there';
@@ -19,10 +22,28 @@ export function HomeScreen() {
   const warmupTitle = st
     ? `Warm-up: 5 quick ${(st.cat.topics.find((t) => t !== focus) || st.cat.topics[0]).toLowerCase()} questions`
     : 'Warm-up: 5 quick questions';
-  const focusTitle = st && st.allStrong ? `${focus}: new ground` : `${focus}: the bit you missed`;
-  const focusWhy = st && st.allStrong
-    ? "Your baseline was clean, so we move ahead. Nexora teaches this one fresh, then you try two."
-    : "You slipped on this in the baseline. Nexora walks one through, then you try two.";
+  // The focus card follows the loop: taught yet? checked yet? failed a check?
+  const attempts = topicProgress.attempts;
+  const allDone = Boolean(st && st.allMastered);
+  const focusTitle = allDone
+    ? 'Every topic learned'
+    : attempts > 0
+      ? `${focus}: one more go`
+      : topicProgress.lessons > 0
+        ? `${focus}: ready to check`
+        : st && st.weak.indexOf(focus) >= 0
+          ? `${focus}: the bit you missed`
+          : `${focus}: new ground`;
+  const focusWhy = allDone
+    ? 'You have proved every topic in this subject with a check. Keep them warm and you are done.'
+    : attempts > 0
+      ? `You got ${topicProgress.lastScore} of ${topicProgress.outOf} last time. Nexora explains it again, then a fresh check — new questions, not the same ones.`
+      : topicProgress.lessons > 0
+        ? 'Nexora has walked you through this. Take the check to prove it stuck.'
+        : st && st.weak.indexOf(focus) >= 0
+          ? 'You slipped on this in the baseline. Nexora walks it through, then checks you on it.'
+          : 'Not proved yet. Nexora teaches this one, then checks you on it.';
+  const focusCta = attempts > 0 ? 'Go again with Nexora' : 'Start with Nexora';
   const secondTitle = second && secondStats ? `${second.subject}: ${secondStats.focus} drill · 8 min` : '';
   const secondMeta = second ? `Exam ${second.dateLabel} — kept warm while ${activeName} is the priority` : '';
 
@@ -72,7 +93,9 @@ export function HomeScreen() {
               <View style={[styles.readinessFill, { width: `${readiness}%` }]} />
             </View>
             <View style={styles.readinessFooter}>
-              <Text style={styles.readinessFooterText}>From your baseline</Text>
+              <Text style={styles.readinessFooterText}>
+                {st && st.masteredCount > 0 ? `${st.masteredCount} topic${st.masteredCount === 1 ? '' : 's'} learned` : 'From your baseline'}
+              </Text>
               <Text style={styles.readinessFooterText}>Target 85%</Text>
             </View>
           </View>
@@ -99,8 +122,14 @@ export function HomeScreen() {
                 <Text style={styles.focusWhy}>{focusWhy}</Text>
               </View>
               <Pressable onPress={actions.goNexora} style={styles.startBtn}>
-                <Text style={styles.startBtnLabel}>Start with Nexora</Text>
+                <Text style={styles.startBtnLabel}>{focusCta}</Text>
               </Pressable>
+              {st && (
+                <Text style={styles.masteryLine}>
+                  {st.masteredCount} of {st.cat.topics.length} topics learned
+                  {st.gaps.length > 1 ? ` · ${st.gaps.length - 1} more after this` : ''}
+                </Text>
+              )}
             </View>
 
             {second && (
@@ -205,6 +234,7 @@ const styles = StyleSheet.create({
   minText: { fontFamily: fonts.bodyBold, fontSize: 13, fontWeight: '700', color: colors.neutral700 },
   focusTitle: { fontFamily: fonts.heading, fontSize: 20, lineHeight: 24, color: colors.text },
   focusWhy: { fontFamily: fonts.body, fontSize: 14, color: colors.neutral700, marginTop: 5 },
+  masteryLine: { fontFamily: fonts.body, fontSize: 12, color: colors.neutral600, textAlign: 'center' },
   startBtn: { backgroundColor: colors.accent, borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
   startBtnLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 16, color: '#fff' },
   listRow: {

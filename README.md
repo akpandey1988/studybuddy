@@ -12,6 +12,28 @@ npx expo start        # then press i / a / w
 
 Node 20+ is required.
 
+## The learn loop
+
+The app's core cycle, per topic:
+
+1. **Find the gap.** The baseline quiz ranks every topic in the subject. Any
+   topic not yet *proved* is a gap, weakest first — a right answer on the single
+   baseline question is not enough on its own.
+2. **Teach it.** Nexora opens a lesson on that topic, Socratically, with
+   everyday examples (`nexora` function).
+3. **Check it.** A 4-question check on that topic alone, generated fresh for
+   every attempt (`practice` function), so a retry can't be passed from memory
+   of which option was right last time. Each answer reveals why immediately —
+   the explanation is part of the teaching, not just marking.
+4. **Pass or go again.** 3 of 4 marks the topic learned and the loop moves to
+   the next gap. Below that, the questions the student missed are handed back to
+   Nexora, which explains the same idea a different way with a fresh example,
+   and a new check is generated. This repeats until the topic is learned.
+
+Readiness is the baseline score plus the ground closed by mastered topics, so
+it visibly rises with each topic proved and tops out at 95% when all are done.
+Loop constants (`CHECK_SIZE`, `CHECK_PASS`) live in `src/data/catalog.ts`.
+
 ## Nexora chat (Claude)
 
 The tutor chat is backed by a Supabase Edge Function that calls the Claude
@@ -32,12 +54,13 @@ For local runs, copy `supabase/functions/.env.example` to
 
 ```bash
 supabase functions deploy nexora
+supabase functions deploy practice
 ```
 
-Or serve it locally (needs Docker):
+Or serve them locally (needs Docker):
 
 ```bash
-supabase functions serve nexora
+supabase functions serve
 ```
 
 ### 3. Point the app at it
@@ -61,13 +84,20 @@ notice instead of failing.
 | `src/state/AppState.tsx` | All app state and actions, incl. readiness/mastery scoring |
 | `src/screens/` | One file per screen (18 of them) |
 | `src/services/nexora.ts` | Streaming client for the Nexora edge function |
+| `src/services/practice.ts` | Client for generated topic checks |
 | `src/theme/tokens.ts` | Colours, fonts, radii, shadows from the Organic design system |
 | `src/data/catalog.ts` | Subjects, topics, and baseline questions |
-| `supabase/functions/nexora/` | Deno edge function that calls Claude |
+| `supabase/functions/nexora/` | Deno edge function — streams the tutor conversation |
+| `supabase/functions/practice/` | Deno edge function — generates a fresh topic check |
 
 ## Known gaps
 
-- **State is in-memory.** Exams, answers, and chat threads reset on reload.
+- **State is in-memory.** Exams, answers, mastery, and chat threads all reset
+  on reload — a student cannot come back tomorrow and continue the loop. This is
+  the most important gap to close next.
+- **Checks need the backend.** Question generation is a live Claude call, so the
+  loop does not work offline; the check screen surfaces this rather than
+  silently failing.
 - **Auth is a stub.** Any 10-digit number and any 4-digit code get you in, and
   the edge function is reachable with just the anon key — anyone holding it can
   spend Anthropic tokens. Close this when real phone auth lands by verifying the

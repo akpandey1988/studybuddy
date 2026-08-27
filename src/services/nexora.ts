@@ -30,6 +30,18 @@ export function isConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 }
 
+export function functionUrl(name: string): string {
+  return `${SUPABASE_URL}/functions/v1/${name}`;
+}
+
+export function requestHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    apikey: SUPABASE_ANON_KEY || '',
+  };
+}
+
 export function studentContext(
   name: string,
   grade: number | null,
@@ -68,14 +80,10 @@ export async function* streamReply(
 
   let res: Response;
   try {
-    res = await fetch(`${SUPABASE_URL}/functions/v1/nexora`, {
+    res = await fetch(functionUrl('nexora'), {
       method: 'POST',
       signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
+      headers: requestHeaders(),
       body: JSON.stringify({
         student,
         messages: turns.map((t) => ({ role: t.role, content: t.content })),

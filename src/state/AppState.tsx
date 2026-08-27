@@ -1,12 +1,40 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, catFor, dateLabel } from '../data/catalog';
-import type { AppData, ChatTurn, Exam, ExamStats, Route, TopicLevel } from './types';
+import { CATALOG, CHECK_PASS, CHECK_SIZE, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, catFor, dateLabel } from '../data/catalog';
+import type {
+  AppData, ChatTurn, Exam, ExamStats, PracticeQuestion, Route, TopicLevel, TopicProgress,
+} from './types';
 
-// Ported 1:1 from the Component class in StudyBuddy Prototype.dc.html.
+// Onboarding and baseline flow ported from StudyBuddy Prototype.dc.html; the
+// per-topic mastery loop (teach -> check -> re-teach) is built on top of it.
+
+/** A topic's thread of Nexora messages is scoped to the exam AND the topic. */
+export function chatKey(examId: number, topic: string): string {
+  return `${examId}::${topic}`;
+}
+
+function blankProgress(): TopicProgress {
+  return {
+    attempts: 0, lessons: 0, lastScore: 0, bestScore: 0,
+    outOf: CHECK_SIZE, mastered: false, missed: [],
+  };
+}
+
+function labelFor(level: number): TopicLevel {
+  if (level === 0) return 'Not tested';
+  if (level >= 4) return 'Strong';
+  if (level === 3) return 'Getting there';
+  return 'Needs work';
+}
+
+/** Weakest first, so the loop always hands back the topic that needs it most. */
+const GAP_ORDER: Record<TopicLevel, number> = {
+  'Needs work': 0, 'Getting there': 1, 'Not tested': 2, 'Strong': 3,
+};
 
 function examStats(exam: Exam): ExamStats {
   const c = catFor(exam.subject);
   const picks = exam.picks || [];
+  const mastery = exam.mastery || {};
   const byTopic: Record<string, { right: number; total: number }> = {};
   c.topics.forEach((t) => { byTopic[t] = { right: 0, total: 0 }; });
   c.qs.forEach((q, i) => {
@@ -15,23 +43,47 @@ function examStats(exam: Exam): ExamStats {
     if (picks[i] === q.answer) e.right += 1;
   });
   const correct = c.qs.reduce((n, q, i) => n + (picks[i] === q.answer ? 1 : 0), 0);
-  const readiness = exam.baselineDone ? Math.round(28 + (correct / c.qs.length) * 46) : 0;
 
   const topics = c.topics.map((name) => {
+    const m = mastery[name];
+    if (m && m.mastered) return { name, level: 5, label: 'Strong' as TopicLevel };
+    // A check is a fresher, deeper signal than the single baseline question.
+    if (m && m.attempts > 0) {
+      const level = Math.max(1, Math.round((m.lastScore / m.outOf) * 5));
+      return { name, level, label: labelFor(level) };
+    }
     const e = byTopic[name];
-    const level = (!exam.baselineDone || e.total === 0) ? 0 : Math.max(1, Math.round((e.right / e.total) * 5));
-    const label: TopicLevel = level === 0 ? 'Not tested' : level >= 4 ? 'Strong' : level === 3 ? 'Getting there' : 'Needs work';
-    return { name, level, label };
+    const level = (!exam.baselineDone || e.total === 0)
+      ? 0
+      : Math.max(1, Math.round((e.right / e.total) * 5));
+    return { name, level, label: labelFor(level) };
   });
 
   const weak = topics.filter((t) => t.label === 'Needs work').map((t) => t.name);
   const mid = topics.filter((t) => t.label === 'Getting there').map((t) => t.name);
   const untested = topics.filter((t) => t.label === 'Not tested').map((t) => t.name);
 
+  // A topic counts as learned only once a check has proved it — a lucky
+  // baseline answer is not enough — so the loop keeps going until all are done.
+  const gaps = topics
+    .filter((t) => !(mastery[t.name] && mastery[t.name].mastered))
+    .slice()
+    .sort((a, b) => GAP_ORDER[a.label] - GAP_ORDER[b.label])
+    .map((t) => t.name);
+
+  const masteredCount = c.topics.filter((t) => mastery[t] && mastery[t].mastered).length;
+  const base = exam.baselineDone ? 28 + (correct / c.qs.length) * 46 : 0;
+  // Baseline sets the floor; mastering topics closes the rest of the gap to 95.
+  const readiness = exam.baselineDone
+    ? Math.min(95, Math.round(base + (masteredCount / c.topics.length) * (95 - base)))
+    : 0;
+
   return {
     cat: c, correct, readiness, topics, weak, mid, untested,
-    focus: weak[0] || mid[0] || untested[0] || c.topics[0],
+    gaps, masteredCount, mastery,
+    focus: gaps[0] || c.topics[0],
     allStrong: weak.length === 0 && mid.length === 0 && exam.baselineDone,
+    allMastered: masteredCount === c.topics.length,
   };
 }
 
@@ -39,6 +91,7 @@ const initialState: AppData = {
   route: 'login', phone: '', otp: '', name: '', grade: null, board: null, prime: false,
   exams: [], activeId: null, qi: 0, sel: null,
   draftSubject: null, draftDays: 30, nextId: 1, chats: {},
+  check: { topic: null, questions: [], qi: 0, sel: null, revealed: false, picks: [] },
 };
 
 function useAppStateImpl() {
@@ -79,7 +132,26 @@ function useAppStateImpl() {
   const q = active && st ? st.cat.qs[s.qi] : null;
   const qTotal = st ? st.cat.qs.length : 0;
 
-  const chat = active ? (s.chats[active.id] || []) : [];
+  const focusTopic = st ? st.focus : '';
+  const activeChatKey = active && focusTopic ? chatKey(active.id, focusTopic) : '';
+  const chat = activeChatKey ? (s.chats[activeChatKey] || []) : [];
+  const topicProgress = st && focusTopic
+    ? (st.mastery[focusTopic] || blankProgress())
+    : blankProgress();
+
+  // Progress for the topic the check is actually about. This is NOT always the
+  // focus topic: passing a check masters the topic, which immediately moves
+  // focus to the next gap while the result screen is still showing.
+  const progressFor = (topic: string | null): TopicProgress =>
+    (topic && st ? st.mastery[topic] : undefined) || blankProgress();
+  const checkProgress = progressFor(s.check.topic);
+
+  const checkQ = s.check.questions[s.check.qi] || null;
+  const checkTotal = s.check.questions.length;
+  const checkScore = s.check.questions.reduce(
+    (n, q, i) => n + (s.check.picks[i] === q.answer ? 1 : 0), 0,
+  );
+  const checkPassed = checkScore >= CHECK_PASS;
 
   const actions = useMemo(() => ({
     setPhone: (v: string) => setS((p) => ({ ...p, phone: v.replace(/[^\d ]/g, '').slice(0, 11) })),
@@ -134,7 +206,7 @@ function useAppStateImpl() {
       const id = p.nextId;
       const exam: Exam = {
         id, subject: p.draftSubject, days: p.draftDays, dateLabel: dateLabel(p.draftDays),
-        syllabus: withSyllabus, picks: [], baselineDone: false,
+        syllabus: withSyllabus, picks: [], baselineDone: false, mastery: {},
       };
       return {
         ...p, exams: p.exams.concat([exam]), nextId: id + 1, activeId: id,
@@ -185,11 +257,104 @@ function useAppStateImpl() {
       return { ...p, route: missing ? 'exams' : 'home' };
     }),
 
-    appendTurn: (examId: number, turn: ChatTurn) => setS((p) => ({
+    appendTurn: (key: string, turn: ChatTurn) => setS((p) => ({
       ...p,
-      chats: { ...p.chats, [examId]: (p.chats[examId] || []).concat([turn]) },
+      chats: { ...p.chats, [key]: (p.chats[key] || []).concat([turn]) },
     })),
-    resetChat: (examId: number) => setS((p) => ({ ...p, chats: { ...p.chats, [examId]: [] } })),
+    resetChat: (key: string) => setS((p) => ({ ...p, chats: { ...p.chats, [key]: [] } })),
+
+    /** Count a lesson the first time Nexora teaches a topic in this thread. */
+    noteLesson: (topic: string) => setS((p) => ({
+      ...p,
+      exams: p.exams.map((e) => (e.id === p.activeId
+        ? {
+          ...e,
+          mastery: {
+            ...e.mastery,
+            [topic]: { ...(e.mastery[topic] || blankProgress()), lessons: (e.mastery[topic]?.lessons ?? 0) + 1 },
+          },
+        }
+        : e)),
+    })),
+
+    // --- the learn loop: teach -> check -> re-teach until mastered ---
+
+    startCheck: (topic: string) => setS((p) => ({
+      ...p,
+      route: 'check',
+      check: { topic, questions: [], qi: 0, sel: null, revealed: false, picks: [] },
+    })),
+    setCheckQuestions: (questions: PracticeQuestion[]) => setS((p) => ({
+      ...p,
+      check: { ...p.check, questions, qi: 0, sel: null, revealed: false, picks: [] },
+    })),
+    /** Answering commits immediately — the explanation is the teaching moment. */
+    answerCheck: (i: number) => setS((p) => (p.check.revealed
+      ? p
+      : { ...p, check: { ...p.check, sel: i, revealed: true } })),
+    nextCheck: () => setS((p) => {
+      const { check } = p;
+      if (check.sel === null || !check.topic || check.questions.length === 0) return p;
+      const picks = check.picks.slice();
+      picks[check.qi] = check.sel;
+
+      if (check.qi < check.questions.length - 1) {
+        return { ...p, check: { ...check, picks, qi: check.qi + 1, sel: null, revealed: false } };
+      }
+
+      const score = check.questions.reduce((n, q, i) => n + (picks[i] === q.answer ? 1 : 0), 0);
+      const missed = check.questions.filter((q, i) => picks[i] !== q.answer).map((q) => q.q);
+      const passed = score >= CHECK_PASS;
+      const topic = check.topic;
+
+      const exams = p.exams.map((e) => {
+        if (e.id !== p.activeId) return e;
+        const prev = e.mastery[topic] || blankProgress();
+        return {
+          ...e,
+          mastery: {
+            ...e.mastery,
+            [topic]: {
+              ...prev,
+              attempts: prev.attempts + 1,
+              lastScore: score,
+              bestScore: Math.max(prev.bestScore, score),
+              outOf: check.questions.length,
+              mastered: prev.mastered || passed,
+              missed,
+            },
+          },
+        };
+      });
+      return { ...p, exams, check: { ...check, picks }, route: 'checkresult' };
+    }),
+    /** Failed the check: hand the misses back to Nexora and teach it again. */
+    reteach: () => setS((p) => {
+      const topic = p.check.topic;
+      const activeExam = p.exams.find((e) => e.id === p.activeId);
+      if (!topic || !activeExam) return p;
+      const missed = activeExam.mastery[topic]?.missed || [];
+      const key = chatKey(activeExam.id, topic);
+      const ask: ChatTurn = {
+        role: 'user',
+        hidden: true,
+        content: missed.length
+          ? `I just took a check on ${topic} and got these wrong:\n${missed.map((m) => `- ${m}`).join('\n')}\n`
+            + 'Explain that idea a different way, with a fresh everyday example, then ask me one question about it.'
+          : `I just took a check on ${topic} and did not pass. Explain it a different way with a fresh example, then ask me one question.`,
+      };
+      return {
+        ...p,
+        route: 'nexora',
+        chats: { ...p.chats, [key]: (p.chats[key] || []).concat([ask]) },
+      };
+    }),
+    /** Passed: back to the plan, where the next gap is already the focus. */
+    finishCheck: () => setS((p) => ({
+      ...p,
+      route: 'home',
+      check: { topic: null, questions: [], qi: 0, sel: null, revealed: false, picks: [] },
+    })),
 
     pickSubjectPill: (id: number) => setS((p) => ({ ...p, activeId: id })),
     goSecond: () => setS((p) => {
@@ -207,7 +372,9 @@ function useAppStateImpl() {
     digits, otpDigits, phoneOk, otpOk, detailsOk,
     active, st, ready, missingSyllabus, second, secondStats,
     atCap, needsPrime, activeName, firstName, readiness, focus,
-    subjectOptions, draftPct, q, qTotal, chat,
+    subjectOptions, draftPct, q, qTotal,
+    chat, activeChatKey, focusTopic, topicProgress,
+    progressFor, checkProgress, checkQ, checkTotal, checkScore, checkPassed,
     actions,
   };
 }
@@ -226,4 +393,4 @@ export function useApp() {
   return ctx;
 }
 
-export { examStats, DAY_CHOICES };
+export { examStats, blankProgress, DAY_CHOICES };

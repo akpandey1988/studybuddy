@@ -88,6 +88,9 @@ export const CATALOG: Subject[] = [
 ];
 
 export const MAX_EXAMS = 8;
+/** Questions in one topic check, and how many must be right to call it learned. */
+export const CHECK_SIZE = 4;
+export const CHECK_PASS = 3;
 export const FREE_EXAMS = 1;
 export const PRIME_PRICE = '₹999';
 export const DAY_CHOICES = [7, 14, 21, 30, 45];
