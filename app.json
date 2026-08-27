@@ -18,7 +18,10 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.nexora.studybuddy",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,6 +38,12 @@
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin"
     ],
-    "scheme": "studybuddy"
+    "scheme": "studybuddy",
+    "extra": {
+      "eas": {
+        "projectId": "c07f4fa1-e372-4c19-b363-81c675026e9c"
+      }
+    },
+    "owner": "akpandey1988"
   }
 }

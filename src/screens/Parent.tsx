@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { BackChevron, Kicker, SectionLabel } from '../components/UI';
 import { GearIcon } from '../components/Icons';
@@ -10,7 +10,11 @@ const WEEK_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const WEEK_STUDIED = [true, true, false, true, true, false, true];
 
 export function ParentScreen() {
-  const { activeExam, exams, plan, nodes, readiness, masteredCount, activeName, firstName, actions } = useApp();
+  const {
+    activeExam, exams, plan, nodes, readiness, masteredCount, activeName, firstName,
+    busy, account, actions,
+  } = useApp();
+  const accountLabel = account.phoneNumber || account.email || (account.isGuest ? 'guest' : '');
 
   const parentNote = plan && nodes.length > 0
     ? `${activeName} is at ${readiness}%, with ${masteredCount} of ${nodes.length} concepts proved.`
@@ -71,11 +75,20 @@ export function ParentScreen() {
         <View style={styles.digestBtn}><Text style={styles.digestBtnText}>Weekly digest on</Text></View>
         <View style={styles.gearBtn}><GearIcon size={22} /></View>
       </View>
+
+      {/* A family phone gets shared, so signing out has to be reachable. */}
+      <Pressable onPress={actions.signOut} disabled={busy === 'auth'} style={styles.signOut}>
+        <Text style={styles.signOutText}>
+          {busy === 'auth' ? 'Signing out…' : `Sign out${accountLabel ? ` (${accountLabel})` : ''}`}
+        </Text>
+      </Pressable>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  signOut: { alignSelf: 'center', paddingVertical: 14, paddingHorizontal: 20 },
+  signOutText: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.accent700 },
   content: { paddingTop: 66, paddingBottom: 40, gap: 18 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   h2: { fontFamily: fonts.heading, fontSize: 27, marginTop: 4, color: colors.text },

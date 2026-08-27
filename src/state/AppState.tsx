@@ -4,7 +4,7 @@ import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, dateLabel } from '../data/
 import * as backend from '../services/backend';
 import { BackendError, auth, isConfigured, signInGuest, watchAuth } from '../services/firebase';
 import {
-  AuthError, confirmPhoneCode, signInWithGoogle, startPhoneSignIn,
+  AuthError, confirmPhoneCode, signInWithGoogle, signOutEverywhere, startPhoneSignIn,
 } from '../services/auth';
 import type { ConfirmationResult } from '@react-native-firebase/auth';
 import { loadExams, loadProfile, newExamId, saveProfile } from '../services/store';
@@ -115,6 +115,20 @@ function useAppStateImpl() {
         try { await signInGuest(); } catch (e) { fail(e); setAuthReady(true); }
         finally { setBusy(null); }
       } else {
+        // Signed out. Drop every trace of the previous student, or their uid
+        // lingers and the app keeps reading a graph it can no longer see.
+        setUid(null);
+        setExams([]);
+        setActiveExamId(null);
+        setNodes([]);
+        setPlan(null);
+        setName('');
+        setGrade(null);
+        setBoard(null);
+        setPhoneRaw('');
+        setOtpRaw('');
+        setConfirmation(null);
+        setRoute('login');
         setAuthReady(true);
       }
     });
@@ -193,6 +207,13 @@ function useAppStateImpl() {
   const phoneOk = digits.length === 10;
   const otpOk = otpDigits.length === OTP_LENGTH;
   const detailsOk = name.trim().length > 1 && grade !== null && board !== null;
+
+  const signedInUser = uid ? auth().currentUser : null;
+  const account = {
+    isGuest: signedInUser?.isAnonymous ?? true,
+    phoneNumber: signedInUser?.phoneNumber ?? null,
+    email: signedInUser?.email ?? null,
+  };
 
   const activeExam = exams.find((e) => e.id === activeExamId) ?? null;
   const readyExams = exams.filter((e) => e.graphStatus === 'ready');
@@ -279,6 +300,14 @@ function useAppStateImpl() {
     },
 
     dismissGuestWarning: () => setGuestProgressLost(false),
+
+    signOut: async () => {
+      setBusy('auth');
+      try {
+        await signOutEverywhere();
+        // The auth listener clears local state and routes back to login.
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
 
     finishDetails: async () => {
       if (!detailsOk || !uid) return;
@@ -439,7 +468,7 @@ function useAppStateImpl() {
   ]);
 
   return {
-    route, uid, authReady, busy, error, guestProgressLost,
+    route, uid, authReady, busy, error, guestProgressLost, account,
     phone, otp, name, grade, board, prime,
     digits, otpDigits, phoneOk, otpOk, detailsOk, firstName,
     exams, activeExam, activeExamId, activeName, readyExams, pendingExams, atCap, needsPrime,
