@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, catFor, dateLabel } from '../data/catalog';
-import type { AppData, Exam, ExamStats, Route, TopicLevel } from './types';
+import type { AppData, ChatTurn, Exam, ExamStats, Route, TopicLevel } from './types';
 
 // Ported 1:1 from the Component class in StudyBuddy Prototype.dc.html.
 
@@ -38,7 +38,7 @@ function examStats(exam: Exam): ExamStats {
 const initialState: AppData = {
   route: 'login', phone: '', otp: '', name: '', grade: null, board: null, prime: false,
   exams: [], activeId: null, qi: 0, sel: null,
-  draftSubject: null, draftDays: 30, nextId: 1,
+  draftSubject: null, draftDays: 30, nextId: 1, chats: {},
 };
 
 function useAppStateImpl() {
@@ -78,6 +78,8 @@ function useAppStateImpl() {
 
   const q = active && st ? st.cat.qs[s.qi] : null;
   const qTotal = st ? st.cat.qs.length : 0;
+
+  const chat = active ? (s.chats[active.id] || []) : [];
 
   const actions = useMemo(() => ({
     setPhone: (v: string) => setS((p) => ({ ...p, phone: v.replace(/[^\d ]/g, '').slice(0, 11) })),
@@ -183,6 +185,12 @@ function useAppStateImpl() {
       return { ...p, route: missing ? 'exams' : 'home' };
     }),
 
+    appendTurn: (examId: number, turn: ChatTurn) => setS((p) => ({
+      ...p,
+      chats: { ...p.chats, [examId]: (p.chats[examId] || []).concat([turn]) },
+    })),
+    resetChat: (examId: number) => setS((p) => ({ ...p, chats: { ...p.chats, [examId]: [] } })),
+
     pickSubjectPill: (id: number) => setS((p) => ({ ...p, activeId: id })),
     goSecond: () => setS((p) => {
       const activeExam = p.exams.find((e) => e.id === p.activeId) || p.exams[0] || null;
@@ -199,7 +207,7 @@ function useAppStateImpl() {
     digits, otpDigits, phoneOk, otpOk, detailsOk,
     active, st, ready, missingSyllabus, second, secondStats,
     atCap, needsPrime, activeName, firstName, readiness, focus,
-    subjectOptions, draftPct, q, qTotal,
+    subjectOptions, draftPct, q, qTotal, chat,
     actions,
   };
 }

@@ -17,6 +17,13 @@ export type Exam = {
   baselineDone: boolean;
 };
 
+export type ChatTurn = {
+  role: 'user' | 'assistant';
+  content: string;
+  /** Kickoff turn that starts the lesson — sent to Claude, not shown in the thread. */
+  hidden?: boolean;
+};
+
 export type AppData = {
   route: Route;
   phone: string;
@@ -32,6 +39,8 @@ export type AppData = {
   draftSubject: string | null;
   draftDays: number;
   nextId: number;
+  /** Nexora chat threads, keyed by exam id. */
+  chats: Record<number, ChatTurn[]>;
 };
 
 export type TopicLevel = 'Not tested' | 'Needs work' | 'Getting there' | 'Strong';
