@@ -154,6 +154,12 @@ user and project-wide — in one Firestore transaction, reserved *before* any
 Claude work so a rejected request costs nothing (`functions/src/quota.ts`).
 Counters are readable by the student but writable only by the functions.
 
+The exam limit is enforced here too. `prime` lives on the student document and
+is writable only by the functions — the rules deny it to the client, or a
+student could grant themselves the paid plan. There is no payment integration
+yet, so nothing can currently set it; the free limit is real, Prime is not
+purchasable.
+
 Each function also carries a `maxInstances` ceiling (3 for `buildGraph`, the
 most expensive call), so a spike cannot fan out into an unbounded bill, and
 `sweepPendingChecks` clears abandoned answer keys daily.
@@ -252,3 +258,9 @@ computed on the client any more.
   your Anthropic bill — and hitting it locks out real students for the day.
 - **The social screens are still mock data** — Friends, Group, Call and Badges
   were never part of the graph work.
+- **No payment integration**, so Prime can't be bought. The cap it implies is
+  enforced server-side; granting Prime currently means setting the flag in
+  Firestore by hand.
+- **No client-side tests.** The 20 tests cover backend graph, planner, mastery
+  and attachment encoding. `AppState` is the most intricate part of the app and
+  has none.

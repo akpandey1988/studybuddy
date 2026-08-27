@@ -68,6 +68,14 @@ function quotaToHttps(err: unknown): never {
   throw err;
 }
 
+/**
+ * How many exams a student may have. The client shows this as a paywall, but
+ * the limit has to be enforced here — client state resets on reload and is
+ * trivially editable, so a client-side cap is decoration.
+ */
+const FREE_EXAMS = 1;
+const MAX_EXAMS = 8;
+
 function requireUid(auth: { uid: string } | undefined): string {
   if (!auth?.uid) throw new HttpsError('unauthenticated', 'Sign in first.');
   return auth.uid;
@@ -105,6 +113,26 @@ export const buildGraph = onCall(
         throw new HttpsError('invalid-argument', 'Malformed attachment.');
       }
     }
+    // Enforce the plan limit before spending anything on Claude. `prime` lives
+    // on the student doc and is writable only from here — the rules deny it to
+    // the client, or a student could grant themselves the paid plan.
+    const studentSnap = await db().collection('students').doc(uid).get();
+    const isPrime = studentSnap.data()?.prime === true;
+    const existing = await db().collection('students').doc(uid).collection('exams').get();
+    // Rebuilding an exam that already exists is not a new exam.
+    const isNew = !existing.docs.some((d) => d.id === examId);
+    const count = existing.size;
+
+    if (isNew && count >= MAX_EXAMS) {
+      throw new HttpsError('failed-precondition', `You can track up to ${MAX_EXAMS} exams.`);
+    }
+    if (isNew && !isPrime && count >= FREE_EXAMS) {
+      throw new HttpsError(
+        'permission-denied',
+        `The free plan covers ${FREE_EXAMS} exam. Prime unlocks up to ${MAX_EXAMS}.`,
+      );
+    }
+
     // Reserve before doing any work, so concurrent calls cannot both start.
     await consumeQuota(uid, 'graph').catch(quotaToHttps);
 

@@ -9,6 +9,9 @@ import { db } from './firebase';
 
 export type Profile = { name: string; grade: number | null; board: string | null };
 
+/** Profile plus server-owned fields the client may read but never write. */
+export type StudentDoc = Profile & { prime?: boolean };
+
 export type ExamRecord = {
   id: string;
   subject: string;
@@ -19,9 +22,9 @@ export type ExamRecord = {
   conceptCount: number;
 };
 
-export async function loadProfile(uid: string): Promise<Profile | null> {
+export async function loadProfile(uid: string): Promise<StudentDoc | null> {
   const snap = await getDoc(doc(db(), 'students', uid));
-  return snap.exists() ? (snap.data() as Profile) : null;
+  return snap.exists() ? (snap.data() as StudentDoc) : null;
 }
 
 export async function saveProfile(uid: string, profile: Profile): Promise<void> {

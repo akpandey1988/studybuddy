@@ -154,6 +154,8 @@ function useAppStateImpl() {
           setName(profile.name ?? '');
           setGrade(profile.grade ?? null);
           setBoard(profile.board ?? null);
+          // Server-owned: the client shows the plan, it does not grant it.
+          setPrime(profile.prime === true);
         }
         setExams(list);
         // Returning student: skip straight past onboarding.
@@ -326,7 +328,13 @@ function useAppStateImpl() {
       setDraftFile(null);
       go(!prime && exams.length >= FREE_EXAMS ? 'prime' : 'addsub');
     },
-    primeCta: () => { setPrime(true); setDraftSubject(null); go('addsub'); },
+    /**
+     * There is no payment integration yet, so this cannot grant Prime — the
+     * flag is server-owned and buildGraph enforces the cap regardless. Send
+     * them to add an exam; the backend will refuse with a clear message if
+     * they are over the limit.
+     */
+    primeCta: () => { setDraftSubject(null); go('addsub'); },
 
     /** Draft is complete — go collect the syllabus the graph is built from. */
     goSyllabus: () => { if (draftSubject) go('syllabus'); },
