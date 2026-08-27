@@ -84,9 +84,12 @@ async function call<Req, Res>(name: string, data: Req): Promise<Res> {
   }
 }
 
+export type SyllabusAttachment = { kind: 'image' | 'pdf'; mediaType: string; data: string };
+
 export const buildGraph = (input: {
   examId: string; subject: string; syllabus: string;
   examDate: number; grade: number | null; board: string | null;
+  attachment?: SyllabusAttachment;
 }) => call<typeof input, { conceptCount: number; concepts: ConceptNode[] }>('buildGraph', input);
 
 export const getGraph = (examId: string) =>

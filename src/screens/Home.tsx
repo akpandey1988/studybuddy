@@ -44,9 +44,9 @@ export function HomeScreen() {
           </View>
         </View>
 
-        {readyExams.length > 1 && (
+        {readyExams.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
-            {readyExams.map((e) => {
+            {readyExams.length > 1 && readyExams.map((e) => {
               const on = e.id === activeExamId;
               return (
                 <Pressable key={e.id} onPress={() => actions.pickSubjectPill(e.id)} style={[styles.pill, on ? styles.pillOn : styles.pillOff]}>

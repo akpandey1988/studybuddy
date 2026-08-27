@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { applyAttempt, effectiveStrength, nextDueAt } from './mastery.js';
-import { computeDepth, normaliseGraph } from './graph.js';
+import { buildContent, computeDepth, normaliseGraph } from './graph.js';
 import { planNextStep } from './plan.js';
 import { emptyProgress } from './types.js';
 import type { ConceptNode } from './types.js';
@@ -74,6 +74,42 @@ test('weights are normalised to sum to 1', () => {
 test('depth is the longest prerequisite chain', () => {
   const g = normaliseGraph([raw('a'), raw('b', ['a']), raw('c', ['b'])]);
   assert.equal(g.find((c) => c.id === 'c')!.depth, 2);
+});
+
+// ── syllabus attachments ───────────────────────────────────────────────────
+
+test('typed-only syllabus sends plain text, not a content array', () => {
+  assert.equal(typeof buildContent('prompt'), 'string');
+});
+
+test('a PDF becomes a document block placed before the instructions', () => {
+  const content = buildContent('prompt', {
+    kind: 'pdf', mediaType: 'application/pdf', data: 'BASE64',
+  }) as { type: string; source?: { media_type: string; data: string } }[];
+
+  assert.equal(content[0].type, 'document', 'document must come first');
+  assert.equal(content[0].source?.media_type, 'application/pdf');
+  assert.equal(content[0].source?.data, 'BASE64');
+  assert.equal(content[1].type, 'text');
+});
+
+test('a photo becomes an image block', () => {
+  const content = buildContent('prompt', {
+    kind: 'image', mediaType: 'image/png', data: 'BASE64',
+  }) as { type: string; source?: { media_type: string } }[];
+
+  assert.equal(content[0].type, 'image');
+  assert.equal(content[0].source?.media_type, 'image/png');
+});
+
+test('an unsupported image media type falls back rather than erroring the API', () => {
+  const content = buildContent('prompt', {
+    kind: 'image', mediaType: 'image/heic', data: 'BASE64',
+  }) as { type: string; source?: { media_type: string } }[];
+
+  // Claude rejects unknown image types outright; a phone that reports HEIC
+  // should still get a usable request.
+  assert.equal(content[0].source?.media_type, 'image/jpeg');
 });
 
 // ── planner ────────────────────────────────────────────────────────────────

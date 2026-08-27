@@ -21,6 +21,15 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "StudyBuddy uses the camera so you can photograph your syllabus sheet and Nexora can build your study plan from it.",
+          "photosPermission": "StudyBuddy needs your photos so you can pick an existing picture of your syllabus."
+        }
+      ]
+    ]
   }
 }

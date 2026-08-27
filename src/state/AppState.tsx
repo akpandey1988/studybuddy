@@ -6,6 +6,7 @@ import { loadExams, loadProfile, newExamId, saveProfile } from '../services/stor
 import type { Busy, CheckState, Route } from './types';
 import type { ConceptNode, NextStep } from '../services/backend';
 import type { ExamRecord } from '../services/store';
+import type { Attachment } from '../services/syllabusInput';
 
 const DAY_MS = 86_400_000;
 
@@ -35,6 +36,7 @@ function useAppStateImpl() {
   const [draftSubject, setDraftSubject] = useState<string | null>(null);
   const [draftDays, setDraftDays] = useState(30);
   const [draftSyllabus, setDraftSyllabus] = useState('');
+  const [draftFile, setDraftFile] = useState<Attachment | null>(null);
 
   const [check, setCheck] = useState<CheckState>(emptyCheck());
   const [result, setResult] = useState<backend.CheckResult | null>(null);
@@ -170,6 +172,7 @@ function useAppStateImpl() {
     pickBoard: setBoard,
     setDraftDays,
     setDraftSyllabus,
+    setDraftFile,
     pickDraftSubject: setDraftSubject,
     clearError: () => setError(null),
 
@@ -204,6 +207,7 @@ function useAppStateImpl() {
       if (atCap) return;
       setDraftSubject(null);
       setDraftSyllabus('');
+      setDraftFile(null);
       go(!prime && exams.length >= FREE_EXAMS ? 'prime' : 'addsub');
     },
     primeCta: () => { setPrime(true); setDraftSubject(null); go('addsub'); },
@@ -221,8 +225,10 @@ function useAppStateImpl() {
       const subject = draftSubject;
       // Fall back to the catalog's chapter list when nothing was typed, so a
       // student can get going without hunting for their syllabus sheet.
+      // A file speaks for itself; typed text is only a fallback when there
+      // is neither, so the catalog list does not override a real syllabus.
       const syllabus = draftSyllabus.trim()
-        || (CATALOG.find((c) => c.name === subject)?.topics.join('\n') ?? subject);
+        || (draftFile ? '' : (CATALOG.find((c) => c.name === subject)?.topics.join('\n') ?? subject));
 
       setBusy('graph');
       setError(null);
@@ -235,11 +241,15 @@ function useAppStateImpl() {
           examDate: Date.now() + draftDays * DAY_MS,
           grade,
           board,
+          attachment: draftFile
+            ? { kind: draftFile.kind, mediaType: draftFile.mediaType, data: draftFile.data }
+            : undefined,
         });
         const list = await refreshExams(uid);
         setActiveExamId(examId);
         setDraftSubject(null);
         setDraftSyllabus('');
+        setDraftFile(null);
         setDraftDays(30);
         if (list.find((e) => e.id === examId)?.graphStatus === 'ready') go('home');
         else go('exams');
@@ -336,7 +346,7 @@ function useAppStateImpl() {
     finishCheck: () => { setCheck(emptyCheck()); setResult(null); go('home'); },
   }), [
     go, fail, uid, phoneOk, otpOk, detailsOk, name, grade, board, atCap, prime,
-    exams, draftSubject, draftSyllabus, draftDays, activeExamId, plan, check, result,
+    exams, draftSubject, draftSyllabus, draftFile, draftDays, activeExamId, plan, check, result,
     readyExams, loadGraph, refreshExams,
   ]);
 
@@ -346,7 +356,7 @@ function useAppStateImpl() {
     digits, otpDigits, phoneOk, otpOk, detailsOk, firstName,
     exams, activeExam, activeExamId, activeName, readyExams, pendingExams, atCap, needsPrime,
     nodes, plan, focusNode, readiness, masteredCount, byId,
-    subjectOptions, draftSubject, draftDays, draftSyllabus, draftPct,
+    subjectOptions, draftSubject, draftDays, draftSyllabus, draftFile, draftPct,
     check, checkQ, checkTotal, result, reteachAsk,
     actions,
   };

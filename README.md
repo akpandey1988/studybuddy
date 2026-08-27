@@ -19,6 +19,11 @@ decision the app makes comes out of it.
 
 ### The graph
 
+The syllabus can be a photo of the sheet, an uploaded PDF, or typed chapter
+names — a photo is the path most students will take. The file is sent inline
+to `buildGraph` and read by Claude directly (a `document` block for PDFs, an
+`image` block for photos), so there is no OCR step to go wrong.
+
 Claude reads the syllabus once and returns 15-40 *concepts* — things that can
 be taught in about ten minutes and then tested — plus the prerequisite edges
 between them. The server then does the parts a language model shouldn't be
@@ -193,8 +198,10 @@ computed on the client any more.
   development build — the Firebase JS SDK cannot do phone auth on native
   without reCAPTCHA. `signInGuest()` is the seam to replace, and anonymous
   accounts can be upgraded in place without losing the graph.
-- **Syllabus is text only.** `buildGraph` takes typed or pasted text; nothing
-  reads a PDF or a photo of the syllabus sheet yet.
+- **Attachments go inline, not through Storage.** Base64 in the callable
+  payload caps a syllabus at ~6 MB, which covers a photo or a normal school
+  PDF but not a large scanned document. Firebase Storage is the upgrade path
+  if that limit starts biting.
 - **App Check is not enforced yet** (see Spend controls). Until it is, the
   global daily cap is the only thing standing between a determined abuser and
   your Anthropic bill — and hitting it locks out real students for the day.

@@ -15,6 +15,18 @@ export function UploadIcon({ size = 24, color = '#8c491a', strokeWidth = 2.75 }:
   );
 }
 
+export function CameraIcon({ size = 24, color = '#8c491a', strokeWidth = 2.75 }: IconProps) {
+  return (
+    <Svg {...base(size)} fill="none">
+      <Path
+        d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2a1 1 0 0 0 .83-.45l.94-1.4A1 1 0 0 1 9.3 4.7h5.4a1 1 0 0 1 .83.45l.94 1.4a1 1 0 0 0 .83.45h2.2A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-9Z"
+        stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+      />
+      <Circle cx={12} cy={13} r={3.4} stroke={color} strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
 export function CheckIcon({ size = 20, color = '#56633f', strokeWidth = 2.75 }: IconProps) {
   return (
     <Svg {...base(size)} fill="none">

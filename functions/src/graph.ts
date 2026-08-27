@@ -21,20 +21,39 @@ const RawConcept = z.object({
 });
 const RawGraph = z.object({ concepts: z.array(RawConcept) });
 
+/** A photographed or uploaded syllabus, base64 encoded. */
+export type Attachment = {
+  kind: 'image' | 'pdf';
+  mediaType: string;
+  data: string;
+};
+
 export type BuildGraphInput = {
   subject: string;
   grade: number | null;
   board: string | null;
   /** Raw syllabus text, or a chapter list the student typed in. */
   syllabus: string;
+  /** A photo or PDF of the syllabus, read by Claude directly. */
+  attachment?: Attachment;
 };
 
+/** Media types Claude will accept as an image. */
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
 export async function buildConceptGraph(input: BuildGraphInput): Promise<Concept[]> {
+  const typed = input.syllabus.trim();
+  const hasFile = Boolean(input.attachment);
+
   const prompt = [
     `Break this ${input.subject} syllabus into a prerequisite graph of learnable concepts for a grade ${input.grade ?? 7} student on the ${input.board ?? 'CBSE'} board.`,
     '',
-    'SYLLABUS',
-    input.syllabus.trim(),
+    hasFile
+      ? 'The syllabus is the attached ' + (input.attachment!.kind === 'pdf' ? 'PDF' : 'photo')
+        + '. Read it carefully, including handwriting and any table structure.'
+        + (typed ? ' The student also typed the notes below; use both.' : '')
+      : 'SYLLABUS',
+    hasFile ? (typed ? `STUDENT'S NOTES\n${typed}` : '') : typed,
     '',
     'Rules:',
     '- A concept is one thing the student can be taught in about 10 minutes and then tested on. Not a whole chapter.',
@@ -58,15 +77,52 @@ export async function buildConceptGraph(input: BuildGraphInput): Promise<Concept
     // Structuring a syllabus into a dependency graph is the one genuinely
     // hard reasoning step in the product — worth the effort budget.
     output_config: { effort: 'high', format: zodOutputFormat(RawGraph) },
-    messages: [{ role: 'user', content: prompt }],
+    messages: [{ role: 'user', content: buildContent(prompt, input.attachment) }],
   });
 
   const response = await stream.finalMessage();
   const parsed = response.parsed_output;
   if (!parsed || parsed.concepts.length === 0) {
-    throw new Error('Could not read that syllabus into concepts.');
+    throw new Error(
+      hasFile
+        ? "Couldn't read a syllabus out of that file. Try a clearer photo, or type the chapter names."
+        : 'Could not read that syllabus into concepts.',
+    );
   }
   return normaliseGraph(parsed.concepts);
+}
+
+/**
+ * The attachment goes before the instructions: Claude reads a document more
+ * reliably when it precedes the question about it.
+ */
+export function buildContent(prompt: string, attachment?: Attachment) {
+  if (!attachment) return prompt;
+
+  if (attachment.kind === 'pdf') {
+    return [
+      {
+        type: 'document' as const,
+        source: {
+          type: 'base64' as const,
+          media_type: 'application/pdf' as const,
+          data: attachment.data,
+        },
+      },
+      { type: 'text' as const, text: prompt },
+    ];
+  }
+
+  const mediaType = IMAGE_TYPES.has(attachment.mediaType)
+    ? (attachment.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp')
+    : 'image/jpeg';
+  return [
+    {
+      type: 'image' as const,
+      source: { type: 'base64' as const, media_type: mediaType, data: attachment.data },
+    },
+    { type: 'text' as const, text: prompt },
+  ];
 }
 
 /**

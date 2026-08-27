@@ -83,9 +83,27 @@ export const buildGraph = onCall(
   { ...common, timeoutSeconds: 540, memory: '1GiB', maxInstances: 3 },
   async (req) => {
     const uid = requireUid(req.auth);
-    const { examId, subject, syllabus, examDate, grade: g, board } = req.data ?? {};
-    if (!examId || !subject || !syllabus) {
-      throw new HttpsError('invalid-argument', 'examId, subject and syllabus are required.');
+    const { examId, subject, syllabus, examDate, grade: g, board, attachment } = req.data ?? {};
+    if (!examId || !subject) {
+      throw new HttpsError('invalid-argument', 'examId and subject are required.');
+    }
+    // Either typed text or a file — one of them has to carry the syllabus.
+    if (!String(syllabus ?? '').trim() && !attachment) {
+      throw new HttpsError('invalid-argument', 'Provide syllabus text or a file.');
+    }
+    if (attachment) {
+      const { kind, mediaType, data } = attachment;
+      if ((kind !== 'image' && kind !== 'pdf') || typeof data !== 'string' || !data) {
+        throw new HttpsError('invalid-argument', 'Malformed attachment.');
+      }
+      // Guard the payload server-side too — the client limit is a courtesy,
+      // not a control.
+      if (data.length > 9_000_000) {
+        throw new HttpsError('invalid-argument', 'That file is too large. Try a photo of just the syllabus pages.');
+      }
+      if (typeof mediaType !== 'string') {
+        throw new HttpsError('invalid-argument', 'Malformed attachment.');
+      }
     }
     // Reserve before doing any work, so concurrent calls cannot both start.
     await consumeQuota(uid, 'graph').catch(quotaToHttps);
@@ -100,7 +118,13 @@ export const buildGraph = onCall(
     });
 
     try {
-      const concepts = await buildConceptGraph({ subject, grade: g ?? null, board: board ?? null, syllabus });
+      const concepts = await buildConceptGraph({
+        subject,
+        grade: g ?? null,
+        board: board ?? null,
+        syllabus: String(syllabus ?? ''),
+        attachment,
+      });
       await writeGraph(uid, examId, concepts);
       await setExam(uid, examId, { graphStatus: 'ready', conceptCount: concepts.length });
       return { conceptCount: concepts.length, concepts };
