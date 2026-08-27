@@ -6,6 +6,7 @@
 
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 import type { User } from 'firebase/auth';
 
@@ -41,6 +42,8 @@ export function app() {
     if (USE_EMULATOR) {
       connectAuthEmulator(getAuth(instance), `http://${EMULATOR_HOST}:9099`, { disableWarnings: true });
       connectFunctionsEmulator(getFunctions(instance, REGION), EMULATOR_HOST, 5001);
+      // Firestore too, or client reads would quietly go to the real project.
+      connectFirestoreEmulator(getFirestore(instance), EMULATOR_HOST, 8080);
     }
   }
   return instance;

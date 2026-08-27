@@ -1,92 +1,76 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TabBar } from '../components/TabBar';
-import { CheckIcon, LeafIcon, UploadIcon } from '../components/Icons';
-import { examStats, useApp } from '../state/AppState';
+import { LeafIcon } from '../components/Icons';
+import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
+/** Today's plan, straight from the planner — nothing is decided on the client. */
 export function HomeScreen() {
   const {
-    s, active, st, ready, missingSyllabus, second, secondStats,
-    activeName, readiness, focus, topicProgress, actions,
+    firstName, exams, activeExam, activeExamId, readyExams, plan, focusNode,
+    readiness, masteredCount, nodes, busy, error, actions,
   } = useApp();
 
-  const dayLine = `Day 4 · ${ready.length} exam${ready.length === 1 ? '' : 's'} running`;
-  const firstName = s.name.trim().split(' ')[0] || 'there';
-  const hasMissing = missingSyllabus.length > 0;
-  const missingText = hasMissing
-    ? missingSyllabus.map((e) => e.subject).join(', ') + (missingSyllabus.length === 1 ? ' has no syllabus yet' : ' have no syllabus yet')
-    : '';
-  const readinessLabel = `${activeName} readiness`;
-  const warmupTitle = st
-    ? `Warm-up: 5 quick ${(st.cat.topics.find((t) => t !== focus) || st.cat.topics[0]).toLowerCase()} questions`
-    : 'Warm-up: 5 quick questions';
-  // The focus card follows the loop: taught yet? checked yet? failed a check?
-  const attempts = topicProgress.attempts;
-  const allDone = Boolean(st && st.allMastered);
-  const focusTitle = allDone
-    ? 'Every topic learned'
-    : attempts > 0
-      ? `${focus}: one more go`
-      : topicProgress.lessons > 0
-        ? `${focus}: ready to check`
-        : st && st.weak.indexOf(focus) >= 0
-          ? `${focus}: the bit you missed`
-          : `${focus}: new ground`;
-  const focusWhy = allDone
-    ? 'You have proved every topic in this subject with a check. Keep them warm and you are done.'
-    : attempts > 0
-      ? `You got ${topicProgress.lastScore} of ${topicProgress.outOf} last time. Nexora explains it again, then a fresh check — new questions, not the same ones.`
-      : topicProgress.lessons > 0
-        ? 'Nexora has walked you through this. Take the check to prove it stuck.'
-        : st && st.weak.indexOf(focus) >= 0
-          ? 'You slipped on this in the baseline. Nexora walks it through, then checks you on it.'
-          : 'Not proved yet. Nexora teaches this one, then checks you on it.';
-  const focusCta = attempts > 0 ? 'Go again with Nexora' : 'Start with Nexora';
-  const secondTitle = second && secondStats ? `${second.subject}: ${secondStats.focus} drill · 8 min` : '';
-  const secondMeta = second ? `Exam ${second.dateLabel} — kept warm while ${activeName} is the priority` : '';
+  const loading = busy === 'plan' && !plan;
+  const daysLine = plan
+    ? `${plan.daysToExam} day${plan.daysToExam === 1 ? '' : 's'} to go · ${readyExams.length} exam${readyExams.length === 1 ? '' : 's'}`
+    : 'Getting your plan…';
+
+  const actionLabel = plan?.action === 'review' ? 'Revise'
+    : plan?.action === 'practise' ? 'Check' : 'Learn';
+  const ctaLabel = plan?.action === 'review' ? 'Revise with Nexora'
+    : plan?.action === 'practise' ? 'Take the check'
+      : 'Start with Nexora';
+  const onCta = plan?.action === 'practise' ? actions.startCheck : actions.goNexora;
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl refreshing={busy === 'plan'} onRefresh={actions.refreshPlan} tintColor={colors.accent} />
+        }
+      >
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.dayLine}>{dayLine}</Text>
+            <Text style={styles.dayLine}>{daysLine}</Text>
             <Text style={styles.h2}>Hi {firstName}</Text>
           </View>
           <View style={styles.streakChip}>
             <LeafIcon size={17} />
-            <Text style={styles.streakNum}>4</Text>
+            <Text style={styles.streakNum}>{masteredCount}</Text>
           </View>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
-          {ready.map((e) => {
-            const es = examStats(e);
-            const on = active && e.id === active.id;
-            return (
-              <Pressable key={e.id} onPress={() => actions.pickSubjectPill(e.id)} style={[styles.pill, on ? styles.pillOn : styles.pillOff]}>
-                <Text style={[styles.pillLabel, { color: on ? '#fff' : colors.neutral700 }]}>{e.subject} {es.readiness}%</Text>
-              </Pressable>
-            );
-          })}
-          <Pressable onPress={actions.goExams} style={styles.addExamPill}>
-            <Text style={styles.addExamLabel}>+ Exam</Text>
-          </Pressable>
-        </ScrollView>
+        {readyExams.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
+            {readyExams.map((e) => {
+              const on = e.id === activeExamId;
+              return (
+                <Pressable key={e.id} onPress={() => actions.pickSubjectPill(e.id)} style={[styles.pill, on ? styles.pillOn : styles.pillOff]}>
+                  <Text style={[styles.pillLabel, { color: on ? '#fff' : colors.neutral700 }]}>{e.subject}</Text>
+                </Pressable>
+              );
+            })}
+            <Pressable onPress={actions.goExams} style={styles.addExamPill}>
+              <Text style={styles.addExamLabel}>+ Exam</Text>
+            </Pressable>
+          </ScrollView>
+        )}
 
         <View style={styles.body}>
-          {hasMissing && (
-            <Pressable onPress={actions.fixMissing} style={styles.missingBanner}>
-              <View style={styles.missingIcon}><UploadIcon size={17} color="#fff" /></View>
-              <Text style={styles.missingText}>{missingText} — add it now</Text>
+          {error && (
+            <Pressable onPress={actions.refreshPlan} style={styles.errorBanner}>
+              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.errorRetry}>Tap to try again</Text>
             </Pressable>
           )}
 
           <View style={styles.readinessCard}>
             <View style={styles.readinessHeader}>
-              <Text style={styles.readinessLabel}>{readinessLabel}</Text>
+              <Text style={styles.readinessLabel}>{activeExam?.subject ?? 'Your exam'} readiness</Text>
               <Text style={styles.readinessValue}>{readiness}%</Text>
             </View>
             <View style={styles.readinessTrack}>
@@ -94,70 +78,72 @@ export function HomeScreen() {
             </View>
             <View style={styles.readinessFooter}>
               <Text style={styles.readinessFooterText}>
-                {st && st.masteredCount > 0 ? `${st.masteredCount} topic${st.masteredCount === 1 ? '' : 's'} learned` : 'From your baseline'}
+                {masteredCount} of {nodes.length} concepts learned
               </Text>
-              <Text style={styles.readinessFooterText}>Target 85%</Text>
+              <Text style={styles.readinessFooterText}>Weighted by exam marks</Text>
             </View>
           </View>
 
-          <View style={styles.todayRow}>
-            <Text style={styles.todayLabel}>Today · 25 min</Text>
-            <Text style={styles.todayNote}>Built from your baseline</Text>
-          </View>
-
-          <View style={{ gap: 10 }}>
-            <View style={styles.warmupDone}>
-              <View style={styles.warmupCheck}><CheckIcon size={16} color="#fff" /></View>
-              <Text style={styles.warmupTitle}>{warmupTitle}</Text>
+          {loading ? (
+            <View style={styles.loadingCard}>
+              <ActivityIndicator color={colors.accent} />
+              <Text style={styles.loadingText}>Working out what to do next…</Text>
             </View>
-
-            <View style={styles.focusCard}>
-              <View style={styles.focusBadgeRow}>
-                <View style={styles.nowBadge}><Text style={styles.nowBadgeText}>NOW</Text></View>
-                <View style={styles.subjBadge}><Text style={styles.subjBadgeText}>{activeName}</Text></View>
-                <Text style={styles.minText}>12 min</Text>
-              </View>
-              <View>
-                <Text style={styles.focusTitle}>{focusTitle}</Text>
-                <Text style={styles.focusWhy}>{focusWhy}</Text>
-              </View>
-              <Pressable onPress={actions.goNexora} style={styles.startBtn}>
-                <Text style={styles.startBtnLabel}>{focusCta}</Text>
-              </Pressable>
-              {st && (
-                <Text style={styles.masteryLine}>
-                  {st.masteredCount} of {st.cat.topics.length} topics learned
-                  {st.gaps.length > 1 ? ` · ${st.gaps.length - 1} more after this` : ''}
-                </Text>
-              )}
+          ) : plan?.action === 'done' ? (
+            <View style={styles.doneCard}>
+              <Text style={styles.focusTitle}>Nothing left to learn</Text>
+              <Text style={styles.focusWhy}>{plan.reason}</Text>
             </View>
+          ) : plan ? (
+            <>
+              <View style={styles.todayRow}>
+                <Text style={styles.todayLabel}>Next up</Text>
+                <Text style={styles.todayNote}>Chosen from your syllabus</Text>
+              </View>
 
-            {second && (
-              <Pressable onPress={actions.goSecond} style={styles.listRow}>
-                <View style={styles.ringBullet} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.listRowTitle}>{secondTitle}</Text>
-                  <Text style={styles.listRowMeta}>{secondMeta}</Text>
+              <View style={styles.focusCard}>
+                <View style={styles.focusBadgeRow}>
+                  <View style={styles.nowBadge}><Text style={styles.nowBadgeText}>{actionLabel.toUpperCase()}</Text></View>
+                  {focusNode && (
+                    <View style={styles.subjBadge}><Text style={styles.subjBadgeText}>{focusNode.chapter}</Text></View>
+                  )}
                 </View>
-              </Pressable>
-            )}
+                <View>
+                  <Text style={styles.focusTitle}>{plan.conceptName}</Text>
+                  {/* The planner's own justification — why this, and not something else. */}
+                  <Text style={styles.focusWhy}>{plan.reason}</Text>
+                </View>
 
-            <Pressable onPress={actions.goGroup} style={styles.listRow}>
-              <View style={styles.ringBullet} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.listRowTitle}>Fraction Face-Off · 8 min</Text>
-                <Text style={styles.listRowMeta}>3 friends waiting in the room</Text>
-              </View>
-            </Pressable>
+                {plan.unlocks && (
+                  <View style={styles.unlockRow}>
+                    <Text style={styles.unlockText}>Unlocks {plan.unlocks.name}</Text>
+                  </View>
+                )}
 
-            <Pressable onPress={actions.goCall} style={styles.listRow}>
-              <View style={styles.ringBullet} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.listRowTitle}>Study room with Ishita · 5 min</Text>
-                <Text style={styles.listRowMeta}>She's on the same topic today</Text>
+                <Pressable onPress={onCta} style={styles.startBtn}>
+                  <Text style={styles.startBtnLabel}>{ctaLabel}</Text>
+                </Pressable>
               </View>
+
+              {plan.dueForReview.length > 0 && (
+                <View style={styles.reviewCard}>
+                  <Text style={styles.reviewTitle}>
+                    {plan.dueForReview.length} going stale
+                  </Text>
+                  <Text style={styles.reviewBody}>
+                    {plan.dueForReview.slice(0, 3).map((d) => d.name).join(', ')}
+                    {plan.dueForReview.length > 3 ? ' and more' : ''} — worth a revisit soon.
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <Pressable onPress={actions.goExams} style={styles.loadingCard}>
+              <Text style={styles.loadingText}>
+                {exams.length === 0 ? 'Add an exam to get started.' : 'Pick an exam to see your plan.'}
+              </Text>
             </Pressable>
-          </View>
+          )}
         </View>
       </ScrollView>
       <TabBar active="home" />
@@ -190,15 +176,12 @@ const styles = StyleSheet.create({
   },
   addExamLabel: { fontFamily: fonts.bodyExtraBold, fontSize: 14, fontWeight: '800', color: colors.accent800 },
   body: { paddingHorizontal: 24, paddingTop: 14, paddingBottom: 24, gap: 16 },
-  missingBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: colors.accent100, borderRadius: radius.md, padding: 13, paddingHorizontal: 16,
+  errorBanner: {
+    backgroundColor: colors.accent100, borderRadius: radius.md, borderWidth: 2,
+    borderColor: colors.accent300, padding: 14, gap: 4,
   },
-  missingIcon: {
-    width: 30, height: 30, borderRadius: 999, backgroundColor: colors.accent,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  missingText: { flex: 1, fontFamily: fonts.bodyBold, fontSize: 14, lineHeight: 19, fontWeight: '700', color: colors.accent900 },
+  errorText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.accent900 },
+  errorRetry: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent700 },
   readinessCard: { backgroundColor: '#fff', borderRadius: radius.lg, padding: 18, gap: 12, ...shadow.md },
   readinessHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   readinessLabel: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 16, color: colors.text },
@@ -213,35 +196,28 @@ const styles = StyleSheet.create({
     letterSpacing: 1, textTransform: 'uppercase', color: colors.neutral600,
   },
   todayNote: { fontFamily: fonts.bodyBold, fontSize: 13, fontWeight: '700', color: colors.accent700 },
-  warmupDone: {
-    flexDirection: 'row', alignItems: 'center', gap: 13,
-    backgroundColor: colors.accent2_100, borderRadius: radius.md, padding: 14, paddingHorizontal: 16,
+  loadingCard: {
+    backgroundColor: '#fff', borderRadius: radius.md, padding: 24,
+    alignItems: 'center', gap: 12, ...shadow.sm,
   },
-  warmupCheck: {
-    width: 28, height: 28, borderRadius: 999, backgroundColor: colors.accent2_500,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  warmupTitle: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, textDecorationLine: 'line-through', color: colors.neutral600 },
+  loadingText: { fontFamily: fonts.body, fontSize: 15, color: colors.neutral700, textAlign: 'center' },
+  doneCard: { backgroundColor: colors.accent2_100, borderRadius: radius.md, padding: 20, gap: 6 },
   focusCard: {
     borderWidth: 2, borderColor: colors.accent, borderRadius: radius.md, backgroundColor: '#fff',
     padding: 16, gap: 12, ...shadow.sm,
   },
-  focusBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  focusBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   nowBadge: { borderRadius: 999, paddingVertical: 5, paddingHorizontal: 11, backgroundColor: colors.accent },
   nowBadgeText: { fontFamily: fonts.bodyExtraBold, fontSize: 12, fontWeight: '800', color: '#fff' },
   subjBadge: { borderRadius: 999, paddingVertical: 5, paddingHorizontal: 11, backgroundColor: colors.accent2_100 },
   subjBadgeText: { fontFamily: fonts.bodyExtraBold, fontSize: 12, fontWeight: '800', color: colors.accent2_800 },
-  minText: { fontFamily: fonts.bodyBold, fontSize: 13, fontWeight: '700', color: colors.neutral700 },
   focusTitle: { fontFamily: fonts.heading, fontSize: 20, lineHeight: 24, color: colors.text },
-  focusWhy: { fontFamily: fonts.body, fontSize: 14, color: colors.neutral700, marginTop: 5 },
-  masteryLine: { fontFamily: fonts.body, fontSize: 12, color: colors.neutral600, textAlign: 'center' },
+  focusWhy: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.neutral700, marginTop: 5 },
+  unlockRow: { backgroundColor: colors.accent2_100, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 12 },
+  unlockText: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent2_800 },
   startBtn: { backgroundColor: colors.accent, borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
   startBtnLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 16, color: '#fff' },
-  listRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 13,
-    backgroundColor: '#fff', borderRadius: radius.md, padding: 14, paddingHorizontal: 16, ...shadow.sm,
-  },
-  ringBullet: { width: 28, height: 28, borderRadius: 999, borderWidth: 2.75, borderColor: colors.neutral300 },
-  listRowTitle: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.text },
-  listRowMeta: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral600 },
+  reviewCard: { backgroundColor: '#fff', borderRadius: radius.md, padding: 16, gap: 4, ...shadow.sm },
+  reviewTitle: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.text },
+  reviewBody: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.neutral600 },
 });

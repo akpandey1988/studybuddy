@@ -2,27 +2,33 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { CtaButton, NexoraNote } from '../components/UI';
-import { examStats, useApp } from '../state/AppState';
-import { MAX_EXAMS, FREE_EXAMS, PRIME_PRICE } from '../data/catalog';
+import { useApp } from '../state/AppState';
+import { MAX_EXAMS, PRIME_PRICE } from '../data/catalog';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
-import type { Exam } from '../state/types';
+import type { ExamRecord } from '../services/store';
 
-function statusFor(e: Exam) {
-  const es = examStats(e);
-  if (!e.syllabus) return { text: 'Add syllabus', bg: colors.accent100, fg: colors.accent800 };
-  if (!e.baselineDone) return { text: 'Baseline pending', bg: colors.neutral200, fg: colors.neutral700 };
-  return { text: `${es.readiness}% ready`, bg: colors.accent2_100, fg: colors.accent2_800 };
+function statusFor(e: ExamRecord) {
+  if (e.graphStatus === 'pending') return { text: 'Building plan…', bg: colors.neutral200, fg: colors.neutral700 };
+  if (e.graphStatus === 'failed') return { text: 'Plan failed', bg: colors.accent100, fg: colors.accent800 };
+  return { text: `${e.conceptCount} concepts`, bg: colors.accent2_100, fg: colors.accent2_800 };
 }
 
-export function ExamsHubScreen() {
-  const { s, ready, atCap, needsPrime, actions } = useApp();
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const whenLabel = (ms: number) => {
+  const d = new Date(ms);
+  const days = Math.max(0, Math.ceil((ms - Date.now()) / 86_400_000));
+  return `Exam ${d.getDate()} ${MONTHS[d.getMonth()]} · ${days} days`;
+};
 
-  const examsIntro = s.exams.length === 0
+export function ExamsHubScreen() {
+  const { exams, prime, readyExams, atCap, needsPrime, actions } = useApp();
+
+  const examsIntro = exams.length === 0
     ? "Start with the exam that's closest — the first one is free. I'll split each day between your exams by how close each one is."
     : "I split each day across these by exam date and weak topics. Add or top up a syllabus any time.";
 
   const addLabel = atCap ? 'Eight exams is the limit' : needsPrime ? '+ Add an exam · Prime' : '+ Add an exam';
-  const footerText = s.prime
+  const footerText = prime
     ? `Prime · ${PRIME_PRICE}/month · up to 8 exams`
     : `Free plan · 1 exam. Prime is ${PRIME_PRICE}/month for up to 8.`;
 
@@ -30,17 +36,16 @@ export function ExamsHubScreen() {
     <Screen style={styles.content}>
       <View style={styles.headerRow}>
         <Text style={styles.h1}>My exams</Text>
-        <Text style={styles.count}>{s.exams.length} of {MAX_EXAMS}</Text>
+        <Text style={styles.count}>{exams.length} of {MAX_EXAMS}</Text>
       </View>
       <Text style={styles.intro}>{examsIntro}</Text>
 
       <View style={{ gap: 10 }}>
-        {s.exams.map((e) => {
+        {exams.map((e) => {
           const st = statusFor(e);
-          const es = examStats(e);
-          const meta = `Exam ${e.dateLabel} · ${e.days} days${e.syllabus ? ` · ${es.cat.chapters} chapters` : ''}`;
+          const meta = whenLabel(e.examDate);
           return (
-            <Pressable key={e.id} onPress={() => actions.openExam(e)} style={styles.row}>
+            <Pressable key={e.id} onPress={() => actions.openExam(e.id)} style={styles.row}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.rowName}>{e.subject}</Text>
                 <Text style={styles.rowMeta}>{meta}</Text>
@@ -56,7 +61,7 @@ export function ExamsHubScreen() {
         </Pressable>
       </View>
 
-      {s.exams.length === 0 && (
+      {exams.length === 0 && (
         <NexoraNote text="Start with the exam that's closest. You can add the rest in a minute." />
       )}
 
@@ -64,7 +69,7 @@ export function ExamsHubScreen() {
         <Text style={styles.footerLink}>{footerText}</Text>
       </Pressable>
 
-      <CtaButton label="Go to today's plan" active={ready.length > 0} onPress={actions.examsCta} style={{ marginTop: 'auto' as const }} />
+      <CtaButton label="Go to today's plan" active={readyExams.length > 0} onPress={actions.examsCta} style={{ marginTop: 'auto' as const }} />
     </Screen>
   );
 }

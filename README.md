@@ -145,27 +145,32 @@ network and no emulator.
 
 ## State of play
 
-**The backend is built and verified.** Graph, planner, mastery, grading,
-security rules and all seven functions run and were exercised end-to-end
-against the emulator suite.
+The app runs entirely on the backend: no mastery, scoring, or scheduling is
+computed on the client any more.
 
-**The screens have not moved onto it yet.** The app still runs the older
-in-memory loop over the hardcoded topic list in `src/data/catalog.ts`:
-`src/services/nexora.ts` and `practice.ts` are marked SUPERSEDED and point at
-the deleted Supabase functions, so chat and checks show their "not connected"
-notice until the migration happens. That migration is the next piece of work:
+- Guest sign-in gives every install a real uid, so the graph has an owner
+  before a phone number is ever collected. A returning student skips
+  onboarding straight to their plan.
+- Onboarding writes the profile to Firestore; adding an exam collects a
+  syllabus and calls `buildGraph`.
+- Home renders `nextStep` — including the planner's own reason for choosing
+  that concept, and what it unlocks.
+- The lesson thread lives on the server, so it survives reloads and follows
+  the student across devices.
+- Checks are generated, recorded and graded server-side; the client never
+  holds an answer key.
 
-1. Hold `examId` and the graph in `AppState` instead of local topic mastery.
-2. Drive Home from `nextStep` rather than the local focus calculation.
-3. Move the chat and check screens onto `src/services/backend.ts`.
-4. Delete `nexora.ts`, `practice.ts`, and the local mastery code they feed.
+### Still open
 
-Also still open:
-
-- **Auth screens are a stub.** `signInGuest()` is wired in
-  `src/services/firebase.ts`, but the OTP screens still accept any 4 digits.
-  Real phone sign-in needs `@react-native-firebase/auth` and a development
-  build — the Firebase JS SDK cannot do phone auth on native without reCAPTCHA.
-- **Syllabus upload is mocked.** `buildGraph` takes syllabus *text*; nothing
-  yet reads a PDF or photo and feeds it in.
-- **No Firebase project is configured.** `.firebaserc` holds a placeholder.
+- **Phone auth is a stub.** The OTP screens accept any 4 digits and identity is
+  anonymous underneath. Real SMS needs `@react-native-firebase/auth` and a
+  development build — the Firebase JS SDK cannot do phone auth on native
+  without reCAPTCHA. `signInGuest()` is the seam to replace, and anonymous
+  accounts can be upgraded in place without losing the graph.
+- **Syllabus is text only.** `buildGraph` takes typed or pasted text; nothing
+  reads a PDF or a photo of the syllabus sheet yet.
+- **One check at a time.** `pendingChecks` documents are deleted on submit but
+  an abandoned check is never cleaned up; a scheduled function should sweep
+  them.
+- **The social screens are still mock data** — Friends, Group, Call and Badges
+  were never part of the graph work.

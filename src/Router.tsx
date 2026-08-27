@@ -1,5 +1,7 @@
 import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { useApp } from './state/AppState';
+import { colors } from './theme/tokens';
 import { LoginScreen } from './screens/Login';
 import { OtpScreen } from './screens/Otp';
 import { DetailsScreen } from './screens/Details';
@@ -7,8 +9,7 @@ import { ExamsHubScreen } from './screens/ExamsHub';
 import { PrimeScreen } from './screens/Prime';
 import { AddExamScreen } from './screens/AddExam';
 import { SyllabusScreen } from './screens/Syllabus';
-import { QuizScreen } from './screens/Quiz';
-import { ResultScreen } from './screens/Result';
+import { BuildingScreen } from './screens/Building';
 import { HomeScreen } from './screens/Home';
 import { NexoraChatScreen } from './screens/NexoraChat';
 import { CheckScreen } from './screens/Check';
@@ -22,9 +23,19 @@ import { GroupScreen } from './screens/Group';
 import { ParentScreen } from './screens/Parent';
 
 export function Router() {
-  const { s } = useApp();
+  const { route, authReady } = useApp();
 
-  switch (s.route) {
+  // Hold the splash until we know whether this student already has an account,
+  // so a returning one never sees the login screen flash past.
+  if (!authReady) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutral100 }}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
+  switch (route) {
     case 'login': return <LoginScreen />;
     case 'otp': return <OtpScreen />;
     case 'details': return <DetailsScreen />;
@@ -32,8 +43,7 @@ export function Router() {
     case 'prime': return <PrimeScreen />;
     case 'addsub': return <AddExamScreen />;
     case 'syllabus': return <SyllabusScreen />;
-    case 'quiz': return <QuizScreen />;
-    case 'result': return <ResultScreen />;
+    case 'building': return <BuildingScreen />;
     case 'home': return <HomeScreen />;
     case 'nexora': return <NexoraChatScreen />;
     case 'check': return <CheckScreen />;

@@ -9,11 +9,11 @@ const GRADES = [4, 5, 6, 7, 8];
 const BOARDS = ['CBSE', 'ICSE', 'State board', 'IB / Other'];
 
 export function DetailsScreen() {
-  const { s, detailsOk, actions } = useApp();
+  const { name, grade, board, detailsOk, busy, error, actions } = useApp();
 
-  const detailsNote = s.grade === null
+  const detailsNote = grade === null
     ? 'Your grade and board tell me which syllabus to expect.'
-    : `Got it — Grade ${s.grade}${s.board ? `, ${s.board}` : ''}. I'll pitch questions at that level.`;
+    : `Got it — Grade ${grade}${board ? `, ${board}` : ''}. I'll pitch questions at that level.`;
 
   return (
     <Screen style={styles.content}>
@@ -25,7 +25,7 @@ export function DetailsScreen() {
       <View style={{ gap: 8 }}>
         <Text style={styles.label}>Your name</Text>
         <TextInput
-          value={s.name}
+          value={name}
           onChangeText={actions.setName}
           placeholder="Aarav"
           placeholderTextColor={colors.neutral500}
@@ -40,7 +40,7 @@ export function DetailsScreen() {
             <Chip
               key={g}
               label={String(g)}
-              active={s.grade === g}
+              active={grade === g}
               onPress={() => actions.pickGrade(g)}
               style={styles.gradeChip}
             />
@@ -52,7 +52,7 @@ export function DetailsScreen() {
         <Text style={styles.label}>Board</Text>
         <View style={styles.boardRow}>
           {BOARDS.map((b) => (
-            <Chip key={b} label={b} active={s.board === b} onPress={() => actions.pickBoard(b)} />
+            <Chip key={b} label={b} active={board === b} onPress={() => actions.pickBoard(b)} />
           ))}
         </View>
       </View>

@@ -6,7 +6,7 @@ import { useApp } from '../state/AppState';
 import { colors, fonts } from '../theme/tokens';
 
 export function LoginScreen() {
-  const { s, phoneOk, actions } = useApp();
+  const { phone, phoneOk, busy, actions } = useApp();
 
   return (
     <Screen style={styles.content}>
@@ -23,7 +23,7 @@ export function LoginScreen() {
           <Text style={styles.phonePrefix}>+91</Text>
           <View style={styles.divider} />
           <TextInput
-            value={s.phone}
+            value={phone}
             onChangeText={actions.setPhone}
             placeholder="98765 43210"
             placeholderTextColor={colors.neutral500}
@@ -37,7 +37,7 @@ export function LoginScreen() {
       <Spacer />
 
       <View style={{ gap: 14 }}>
-        <CtaButton label="Send me a code" active={phoneOk} onPress={actions.sendCode} />
+        <CtaButton label={busy === 'auth' ? 'Getting ready…' : 'Send me a code'} active={phoneOk && busy !== 'auth'} onPress={actions.sendCode} />
         <Text style={styles.footer}>By continuing you agree to study for 25 minutes a day. Mostly.</Text>
       </View>
     </Screen>

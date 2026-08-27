@@ -2,78 +2,51 @@ import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { BackChevron, CtaButton } from '../components/UI';
-import { CHECK_SIZE } from '../data/catalog';
-import { fetchCheck } from '../services/practice';
-import { NexoraError } from '../services/nexora';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
+/**
+ * A check on one concept. The client never holds the answer key — each pick is
+ * sent to the server, which records it and returns the explanation for that
+ * question alone. That keeps the immediate "here's why" feedback without
+ * letting a student read ahead or grade themselves.
+ */
 export function CheckScreen() {
-  const { s, active, checkQ, checkTotal, checkProgress, actions } = useApp();
+  const { check, checkQ, checkTotal, focusNode, busy, error, actions } = useApp();
 
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const topic = s.check.topic;
+  const building = busy === 'check' || (checkTotal === 0 && !error);
 
-  const load = React.useCallback(async () => {
-    if (!topic || !active) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const questions = await fetchCheck({
-        subject: active.subject,
-        topic,
-        grade: s.grade,
-        board: s.board,
-        count: CHECK_SIZE,
-        attempt: checkProgress.attempts + 1,
-        missed: checkProgress.missed,
-      });
-      actions.setCheckQuestions(questions);
-    } catch (e) {
-      setError(e instanceof NexoraError ? e.message : `Something went wrong: ${(e as Error).message}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [topic, active, s.grade, s.board, checkProgress.attempts, checkProgress.missed, actions]);
-
-  const requested = React.useRef(false);
-  React.useEffect(() => {
-    if (requested.current || checkTotal > 0) return;
-    requested.current = true;
-    load();
-  }, [checkTotal, load]);
-
-  if (loading || (checkTotal === 0 && !error)) {
+  if (building) {
     return (
       <Screen style={styles.centered}>
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.loadingText}>Building a fresh check on {topic}…</Text>
+        <Text style={styles.loadingText}>Building a fresh check on {check.conceptName}…</Text>
         <Text style={styles.loadingHint}>New questions every time, so you can't pass by memory.</Text>
       </Screen>
     );
   }
 
-  if (error) {
+  if (error && checkTotal === 0) {
     return (
       <Screen style={styles.centered}>
         <Text style={styles.errorTitle}>Couldn't build the check</Text>
         <Text style={styles.errorBody}>{error}</Text>
-        <CtaButton label="Try again" onPress={() => { requested.current = false; load(); }} />
+        <CtaButton label="Try again" onPress={actions.startCheck} />
         <Pressable onPress={actions.goHome}><Text style={styles.link}>Back to today</Text></Pressable>
       </Screen>
     );
   }
 
-  if (!checkQ) return <Screen style={styles.centered}><Text style={styles.loadingText}>No questions.</Text></Screen>;
+  if (!checkQ) {
+    return <Screen style={styles.centered}><Text style={styles.loadingText}>No questions.</Text></Screen>;
+  }
 
-  const { sel, revealed, qi } = s.check;
-  const correct = revealed && sel === checkQ.answer;
+  const { sel, revealed, qi } = check;
   const pct = Math.round(((qi + (revealed ? 1 : 0)) / checkTotal) * 100);
-  const attemptLabel = checkProgress.attempts > 0
-    ? `Attempt ${checkProgress.attempts + 1}`
-    : 'First check';
+  const attempts = focusNode?.attempts ?? 0;
+  const attemptLabel = attempts > 0 ? `Attempt ${attempts + 1}` : 'First check';
   const nextLabel = qi >= checkTotal - 1 ? 'See how I did' : 'Next question';
+  const waiting = busy === 'answer' || busy === 'submit';
 
   return (
     <Screen style={styles.content}>
@@ -87,15 +60,14 @@ export function CheckScreen() {
 
       <ScrollView contentContainerStyle={{ gap: 18 }} showsVerticalScrollIndicator={false}>
         <View style={styles.qCard}>
-          <Text style={styles.qKicker}>{topic} · {attemptLabel}</Text>
+          <Text style={styles.qKicker}>{check.conceptName} · {attemptLabel}</Text>
           <Text style={styles.qText}>{checkQ.q}</Text>
         </View>
 
         <View style={{ gap: 11 }}>
           {checkQ.opts.map((label, i) => {
             const chosen = sel === i;
-            const isAnswer = i === checkQ.answer;
-            // After answering, mark the right one green and a wrong pick red.
+            const isAnswer = revealed ? i === revealed.answer : false;
             const style = !revealed
               ? (chosen ? styles.optOn : styles.optOff)
               : isAnswer ? styles.optRight
@@ -108,11 +80,11 @@ export function CheckScreen() {
               <Pressable
                 key={i}
                 onPress={() => actions.answerCheck(i)}
-                disabled={revealed}
+                disabled={Boolean(revealed) || waiting}
                 style={[styles.opt, style]}
               >
-                <View style={[styles.dot, chosen || (revealed && isAnswer) ? styles.dotOn : styles.dotOff]} />
-                <Text style={[styles.optLabel, { color: labelColor, fontWeight: chosen || (revealed && isAnswer) ? '700' : '600' }]}>
+                <View style={[styles.dot, chosen || isAnswer ? styles.dotOn : styles.dotOff]} />
+                <Text style={[styles.optLabel, { color: labelColor, fontWeight: chosen || isAnswer ? '700' : '600' }]}>
                   {label}
                 </Text>
               </Pressable>
@@ -121,18 +93,20 @@ export function CheckScreen() {
         </View>
 
         {revealed && (
-          <View style={[styles.whyCard, correct ? styles.whyRight : styles.whyWrong]}>
-            <Text style={[styles.whyTitle, { color: correct ? colors.accent2_800 : colors.accent800 }]}>
-              {correct ? 'That’s it' : 'Not quite'}
+          <View style={[styles.whyCard, revealed.correct ? styles.whyRight : styles.whyWrong]}>
+            <Text style={[styles.whyTitle, { color: revealed.correct ? colors.accent2_800 : colors.accent800 }]}>
+              {revealed.correct ? 'That\u2019s it' : 'Not quite'}
             </Text>
-            <Text style={styles.whyBody}>{checkQ.why}</Text>
+            <Text style={styles.whyBody}>{revealed.why}</Text>
           </View>
         )}
+
+        {error && checkTotal > 0 && <Text style={styles.inlineError}>{error}</Text>}
       </ScrollView>
 
       <CtaButton
-        label={nextLabel}
-        active={revealed}
+        label={busy === 'submit' ? 'Marking…' : nextLabel}
+        active={Boolean(revealed) && !waiting}
         onPress={actions.nextCheck}
         style={{ marginTop: 12 }}
       />
@@ -170,6 +144,7 @@ const styles = StyleSheet.create({
   dot: { width: 26, height: 26, borderRadius: 999 },
   dotOn: { borderWidth: 8, borderColor: colors.accent },
   dotOff: { borderWidth: 2.75, borderColor: colors.neutral300 },
+  inlineError: { fontFamily: fonts.body, fontSize: 14, color: colors.accent800, textAlign: 'center' },
   whyCard: { borderRadius: radius.md, borderWidth: 2, padding: 16, gap: 5 },
   whyRight: { backgroundColor: colors.accent2_100, borderColor: colors.accent2_300 },
   whyWrong: { backgroundColor: colors.accent100, borderColor: colors.accent300 },

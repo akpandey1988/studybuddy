@@ -6,26 +6,30 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SendIcon } from '../components/Icons';
 import { useApp } from '../state/AppState';
-import { KICKOFF, NexoraError, isConfigured, streamReply, studentContext } from '../services/nexora';
-import { CHECK_SIZE } from '../data/catalog';
-import type { ChatTurn } from '../state/types';
+import { BackendError, getThread, streamTutor } from '../services/backend';
+import type { ChatTurn } from '../services/backend';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
+/**
+ * The lesson. The thread lives on the server so Nexora keeps its context
+ * across devices and reloads; this screen holds only the reply being streamed.
+ */
 export function NexoraChatScreen() {
-  const { s, active, st, chat, activeChatKey, focusTopic, topicProgress, actions } = useApp();
+  const { activeExamId, plan, focusNode, actions } = useApp();
 
-  const [draft, setDraft] = React.useState('');       // streaming reply, not yet committed
+  const [turns, setTurns] = React.useState<ChatTurn[]>([]);
+  const [draft, setDraft] = React.useState('');
   const [input, setInput] = React.useState('');
   const [sending, setSending] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
   const scroller = React.useRef<ScrollView>(null);
   const abort = React.useRef<AbortController | null>(null);
-  const key = activeChatKey;
+  const conceptId = plan?.conceptId ?? null;
 
-  const send = React.useCallback(async (turns: ChatTurn[]) => {
-    if (!key || !active || !st) return;
-
+  const send = React.useCallback(async (message?: string) => {
+    if (!activeExamId || !conceptId) return;
     setSending(true);
     setError(null);
     setDraft('');
@@ -35,67 +39,68 @@ export function NexoraChatScreen() {
     let reply = '';
 
     try {
-      const student = studentContext(s.name, s.grade, s.board, active.subject, st);
-      for await (const chunk of streamReply(student, turns, controller.signal)) {
+      for await (const chunk of streamTutor(activeExamId, conceptId, message, controller.signal)) {
         reply += chunk;
         setDraft(reply);
       }
-      if (reply.trim()) actions.appendTurn(key, { role: 'assistant', content: reply });
+      if (reply.trim()) setTurns((t) => [...t, { role: 'assistant', content: reply }]);
       else setError('Nexora went quiet. Try again.');
     } catch (e) {
       if (!controller.signal.aborted) {
-        setError(e instanceof NexoraError ? e.message : `Something went wrong: ${(e as Error).message}`);
+        setError(e instanceof BackendError ? e.message : `Something went wrong: ${(e as Error).message}`);
       }
-      // Keep whatever streamed before the failure so the student doesn't lose it.
-      if (reply.trim()) actions.appendTurn(key, { role: 'assistant', content: reply });
+      // Keep whatever streamed before the failure rather than losing it.
+      if (reply.trim()) setTurns((t) => [...t, { role: 'assistant', content: reply }]);
     } finally {
       setDraft('');
       setSending(false);
       abort.current = null;
     }
-  }, [key, active, st, s.name, s.grade, s.board, actions]);
+  }, [activeExamId, conceptId]);
 
-  // Open the lesson, or answer the re-teach request the check result queued up.
-  const started = React.useRef(false);
+  // Load what's already been said, and open the lesson if nothing has.
+  const opened = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (started.current || !key || !isConfigured()) return;
+    if (!activeExamId || !conceptId || opened.current === conceptId) return;
+    opened.current = conceptId;
+    let cancelled = false;
 
-    const last = chat[chat.length - 1];
-    if (chat.length === 0) {
-      started.current = true;
-      const kickoff: ChatTurn = { role: 'user', content: KICKOFF, hidden: true };
-      actions.appendTurn(key, kickoff);
-      if (focusTopic) actions.noteLesson(focusTopic);
-      send([kickoff]);
-    } else if (last && last.role === 'user') {
-      // A pending user turn with no reply yet — the re-teach ask from a failed check.
-      started.current = true;
-      if (focusTopic) actions.noteLesson(focusTopic);
-      send(chat);
-    }
-  }, [key, chat, focusTopic, actions, send]);
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { turns: existing } = await getThread(activeExamId, conceptId);
+        if (cancelled) return;
+        setTurns(existing);
+        if (existing.length === 0) await send();
+      } catch (e) {
+        if (!cancelled) setError(e instanceof BackendError ? e.message : (e as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeExamId, conceptId, send]);
 
   React.useEffect(() => () => abort.current?.abort(), []);
 
   const onSend = () => {
     const text = input.trim();
-    if (!text || sending || !key) return;
-    const turn: ChatTurn = { role: 'user', content: text };
-    actions.appendTurn(key, turn);
+    if (!text || sending) return;
+    setTurns((t) => [...t, { role: 'user', content: text }]);
     setInput('');
-    send(chat.concat([turn]));
+    send(text);
   };
 
-  const retry = () => {
+  const restart = async () => {
+    await actions.resetThread();
+    setTurns([]);
+    opened.current = null;
     setError(null);
-    if (chat.length > 0) send(chat);
   };
 
-  const visible = chat.filter((t) => !t.hidden);
-  const configured = isConfigured();
-  // Offer the check only once Nexora has actually taught something.
-  const readyToCheck = configured && !sending && !!focusTopic
-    && chat.some((t) => t.role === 'assistant');
+  const readyToCheck = !sending && !loading && turns.some((t) => t.role === 'assistant');
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -105,11 +110,11 @@ export function NexoraChatScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Nexora</Text>
           <Text style={styles.subtitle} numberOfLines={1}>
-            {st ? `${focusTopic} · ${active?.subject ?? ''}` : 'Getting ready…'}
+            {plan ? `${plan.conceptName}${focusNode ? ` · ${focusNode.chapter}` : ''}` : 'Getting ready…'}
           </Text>
         </View>
-        {visible.length > 0 && (
-          <Pressable onPress={() => { started.current = false; if (key) actions.resetChat(key); }} hitSlop={8} style={styles.timer}>
+        {turns.length > 0 && (
+          <Pressable onPress={restart} hitSlop={8} style={styles.timer}>
             <Text style={styles.timerText}>Restart</Text>
           </Pressable>
         )}
@@ -118,7 +123,6 @@ export function NexoraChatScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
       >
         <ScrollView
           ref={scroller}
@@ -126,23 +130,18 @@ export function NexoraChatScreen() {
           onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
           keyboardDismissMode="on-drag"
         >
-          {!configured && (
-            <View style={styles.notice}>
-              <Text style={styles.noticeTitle}>Nexora isn't connected yet</Text>
-              <Text style={styles.noticeBody}>
-                Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env, then deploy
-                the nexora edge function. See README.md.
-              </Text>
-            </View>
+          {/* Why this concept, carried over from the plan. */}
+          {plan?.reason && turns.length > 0 && (
+            <View style={styles.whyCard}><Text style={styles.whyText}>{plan.reason}</Text></View>
           )}
 
-          {visible.map((t, i) => (
+          {turns.map((t, i) => (
             <Bubble key={i} mine={t.role === 'user'}>{t.content}</Bubble>
           ))}
 
           {draft.length > 0 && <Bubble>{draft}</Bubble>}
 
-          {sending && draft.length === 0 && (
+          {(sending || loading) && draft.length === 0 && (
             <View style={[styles.bubble, styles.bubbleTheirs, styles.thinking]}>
               <ActivityIndicator size="small" color={colors.neutral600} />
               <Text style={styles.thinkingText}>Nexora is thinking…</Text>
@@ -150,7 +149,7 @@ export function NexoraChatScreen() {
           )}
 
           {error && (
-            <Pressable onPress={retry} style={styles.error}>
+            <Pressable onPress={() => { setError(null); send(); }} style={styles.error}>
               <Text style={styles.errorText}>{error}</Text>
               <Text style={styles.errorRetry}>Tap to try again</Text>
             </Pressable>
@@ -158,14 +157,14 @@ export function NexoraChatScreen() {
         </ScrollView>
 
         {readyToCheck && (
-          <Pressable onPress={() => focusTopic && actions.startCheck(focusTopic)} style={styles.checkBar}>
+          <Pressable onPress={actions.startCheck} style={styles.checkBar}>
             <Text style={styles.checkBarLabel}>
-              {topicProgress.attempts > 0 ? 'Try the check again' : "I've got it — check me"}
+              {focusNode && focusNode.attempts > 0 ? 'Try the check again' : "I've got it — check me"}
             </Text>
             <Text style={styles.checkBarMeta}>
-              {topicProgress.attempts > 0
-                ? `Attempt ${topicProgress.attempts + 1} · fresh questions`
-                : `${CHECK_SIZE} questions on ${focusTopic}`}
+              {focusNode && focusNode.attempts > 0
+                ? `Attempt ${focusNode.attempts + 1} · fresh questions`
+                : `Questions on ${plan?.conceptName ?? 'this'}`}
             </Text>
           </Pressable>
         )}
@@ -178,15 +177,14 @@ export function NexoraChatScreen() {
             placeholderTextColor={colors.neutral600}
             style={styles.inputField}
             multiline
-            editable={configured}
             onSubmitEditing={onSend}
             returnKeyType="send"
             blurOnSubmit={false}
           />
           <Pressable
             onPress={onSend}
-            disabled={!input.trim() || sending || !configured}
-            style={[styles.sendBtn, (!input.trim() || sending || !configured) && styles.sendBtnOff]}
+            disabled={!input.trim() || sending}
+            style={[styles.sendBtn, (!input.trim() || sending) && styles.sendBtnOff]}
           >
             <SendIcon size={22} />
           </Pressable>
@@ -227,18 +225,14 @@ const styles = StyleSheet.create({
   bubbleText: { fontFamily: fonts.body, fontSize: 15, lineHeight: 22 },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   thinkingText: { fontFamily: fonts.body, fontSize: 14, color: colors.neutral600 },
-  notice: {
-    backgroundColor: colors.accent100, borderRadius: radius.md, borderWidth: 2,
-    borderColor: colors.accent300, padding: 16, gap: 6,
-  },
-  noticeTitle: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.accent800 },
-  noticeBody: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.accent800 },
   error: {
     alignSelf: 'flex-start', maxWidth: '86%', backgroundColor: '#fff', borderRadius: radius.md,
     borderWidth: 2, borderColor: colors.accent300, padding: 14, gap: 4,
   },
   errorText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.text },
   errorRetry: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent700 },
+  whyCard: { backgroundColor: colors.accent2_100, borderRadius: radius.md, padding: 14 },
+  whyText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.accent2_800 },
   checkBar: {
     marginHorizontal: 20, marginBottom: 4, backgroundColor: colors.accent2_500,
     borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: 18, alignItems: 'center', gap: 2,

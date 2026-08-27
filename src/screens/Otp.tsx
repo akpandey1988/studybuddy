@@ -6,7 +6,7 @@ import { useApp } from '../state/AppState';
 import { colors, fonts, radius } from '../theme/tokens';
 
 export function OtpScreen() {
-  const { s, digits, phoneOk, otpDigits, otpOk, actions } = useApp();
+  const { otp, digits, phoneOk, otpDigits, otpOk, actions } = useApp();
   const phoneDisplay = phoneOk ? `+91 ${digits.slice(0, 5)} ${digits.slice(5)}` : 'your number';
 
   return (
@@ -27,7 +27,7 @@ export function OtpScreen() {
           ))}
         </View>
         <TextInput
-          value={s.otp}
+          value={otp}
           onChangeText={actions.setOtp}
           placeholder="Type the 4 digits"
           placeholderTextColor={colors.neutral500}

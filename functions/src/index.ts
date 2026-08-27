@@ -12,8 +12,8 @@ import { buildConceptGraph } from './graph.js';
 import { applyAttempt } from './mastery.js';
 import { planNextStep } from './plan.js';
 import {
-  db, getExam, getNode, getNodes, recordAttemptDoc, setExam, setThread,
-  updateProgress, writeGraph,
+  db, getExam, getNode, getNodes, getThread as getThread_, recordAttemptDoc,
+  setExam, setThread, updateProgress, writeGraph,
 } from './store.js';
 import { handleTutor } from './tutor.js';
 import type { PracticeQuestion } from './check.js';
@@ -115,6 +115,39 @@ export const startCheck = onCall(
   },
 );
 
+/**
+ * Record one answer and hand back the explanation for that question only.
+ * Keeps the immediate "here's why" feedback the lesson depends on without
+ * ever shipping the whole answer key to the client.
+ */
+export const answerQuestion = onCall({ region: REGION }, async (req) => {
+  const uid = requireUid(req.auth);
+  const { examId, checkId, index, pick } = req.data ?? {};
+  if (!examId || !checkId || typeof index !== 'number' || typeof pick !== 'number') {
+    throw new HttpsError('invalid-argument', 'examId, checkId, index and pick are required.');
+  }
+
+  const ref = pendingRef(uid, examId).doc(checkId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'That check has expired.');
+
+  const { questions, picks = [] } = snap.data() as {
+    questions: PracticeQuestion[]; picks?: (number | null)[];
+  };
+  const question = questions[index];
+  if (!question) throw new HttpsError('out-of-range', 'No such question in this check.');
+
+  // First answer stands — re-answering must not let a student fish for the key.
+  const recorded = picks.slice();
+  if (recorded[index] === undefined || recorded[index] === null) {
+    recorded[index] = pick;
+    await ref.set({ picks: recorded }, { merge: true });
+  }
+
+  const committed = recorded[index] as number;
+  return { correct: committed === question.answer, answer: question.answer, why: question.why };
+});
+
 /** Grade a check, update mastery, and say what comes next. */
 export const submitCheck = onCall({ region: REGION }, async (req) => {
   const uid = requireUid(req.auth);
@@ -125,21 +158,27 @@ export const submitCheck = onCall({ region: REGION }, async (req) => {
 
   const pendingDoc = await pendingRef(uid, examId).doc(checkId).get();
   if (!pendingDoc.exists) throw new HttpsError('not-found', 'That check has expired.');
-  const { conceptId, questions } = pendingDoc.data() as {
-    conceptId: string; questions: PracticeQuestion[];
+  const { conceptId, questions, picks: recorded } = pendingDoc.data() as {
+    conceptId: string; questions: PracticeQuestion[]; picks?: (number | null)[];
   };
 
   const [exam, node] = await Promise.all([getExam(uid, examId), getNode(uid, examId, conceptId)]);
   if (!exam || !node) throw new HttpsError('not-found', 'No such concept.');
 
-  const { score, missed } = grade(questions, picks.map(Number));
+  // Prefer what the server recorded as each question was answered; the
+  // client's copy is only a fallback for a check answered in one go.
+  const finalPicks = questions.map((_, i) => {
+    const fromServer = recorded?.[i];
+    return typeof fromServer === 'number' ? fromServer : Number(picks[i]);
+  });
+  const { score, missed } = grade(questions, finalPicks);
   const now = Date.now();
   const progress = applyAttempt(node, score, questions.length, missed, now, exam.examDate);
 
   await Promise.all([
     updateProgress(uid, examId, conceptId, progress),
     recordAttemptDoc(uid, examId, {
-      conceptId, score, outOf: questions.length, picks, missed, at: now,
+      conceptId, score, outOf: questions.length, picks: finalPicks, missed, at: now,
     }),
     pendingDoc.ref.delete(),
   ]);
@@ -155,6 +194,16 @@ export const submitCheck = onCall({ region: REGION }, async (req) => {
     state: progress.state,
     next: planNextStep(nodes, now, exam.examDate),
   };
+});
+
+/** The lesson so far, so reopening a concept shows the conversation. */
+export const getThread = onCall({ region: REGION }, async (req) => {
+  const uid = requireUid(req.auth);
+  const { examId, conceptId } = req.data ?? {};
+  if (!examId || !conceptId) throw new HttpsError('invalid-argument', 'examId and conceptId are required.');
+  const turns = await getThread_(uid, examId, conceptId);
+  // Kickoff and re-teach asks are prompt scaffolding, not part of the chat.
+  return { turns: turns.filter((t) => !t.hidden) };
 });
 
 /** Wipe a concept's lesson thread so the next lesson starts fresh. */

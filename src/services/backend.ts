@@ -6,9 +6,10 @@
 
 import { fetch } from 'expo/fetch';
 import { httpsCallable } from 'firebase/functions';
-import { BackendError, REGION, functions, idToken, isConfigured } from './firebase';
+import { REGION, functions, idToken, isConfigured } from './firebase';
+import { BackendError } from './firebase';
 
-export type { BackendError };
+export { BackendError };
 
 /** A graph node joined with this student's standing on it. */
 export type ConceptNode = {
@@ -86,9 +87,23 @@ export const nextStep = (examId: string) =>
 export const startCheck = (examId: string, conceptId: string) =>
   call<{ examId: string; conceptId: string }, StartedCheck>('startCheck', { examId, conceptId });
 
+/** Record one answer and get the explanation for that question alone. */
+export const answerQuestion = (examId: string, checkId: string, index: number, pick: number) =>
+  call<{ examId: string; checkId: string; index: number; pick: number },
+    { correct: boolean; answer: number; why: string }>(
+    'answerQuestion', { examId, checkId, index, pick },
+  );
+
 export const submitCheck = (examId: string, checkId: string, picks: number[]) =>
   call<{ examId: string; checkId: string; picks: number[] }, CheckResult>(
     'submitCheck', { examId, checkId, picks },
+  );
+
+export type ChatTurn = { role: 'user' | 'assistant'; content: string };
+
+export const getThread = (examId: string, conceptId: string) =>
+  call<{ examId: string; conceptId: string }, { turns: ChatTurn[] }>(
+    'getThread', { examId, conceptId },
   );
 
 export const resetThread = (examId: string, conceptId: string) =>
