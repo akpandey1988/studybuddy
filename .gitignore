@@ -33,7 +33,10 @@ yarn-error.*
 # local env files
 .env
 .env*.local
-supabase/functions/.env
+functions/.secret.local
+functions/lib/
+.firebase/
+*-debug.log
 
 # typescript
 *.tsbuildinfo

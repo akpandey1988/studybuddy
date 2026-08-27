@@ -1,3 +1,8 @@
+// SUPERSEDED — this talked to the Supabase edge functions, which have been
+// removed in favour of the Firebase backend in functions/. It is kept only
+// so the current screens keep compiling while they still run the local
+// mastery loop. Migrating those screens to src/services/backend.ts (server
+// graph + server grading) deletes this file.
 // Client for the `nexora` Supabase Edge Function.
 //
 // Uses expo/fetch rather than the global fetch: React Native's built-in fetch

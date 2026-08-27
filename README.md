@@ -12,69 +12,120 @@ npx expo start        # then press i / a / w
 
 Node 20+ is required.
 
-## The learn loop
+## How it works
 
-The app's core cycle, per topic:
+The backend keeps a **knowledge graph** per student per exam, and every
+decision the app makes comes out of it.
 
-1. **Find the gap.** The baseline quiz ranks every topic in the subject. Any
-   topic not yet *proved* is a gap, weakest first — a right answer on the single
-   baseline question is not enough on its own.
-2. **Teach it.** Nexora opens a lesson on that topic, Socratically, with
-   everyday examples (`nexora` function).
-3. **Check it.** A 4-question check on that topic alone, generated fresh for
-   every attempt (`practice` function), so a retry can't be passed from memory
-   of which option was right last time. Each answer reveals why immediately —
-   the explanation is part of the teaching, not just marking.
-4. **Pass or go again.** 3 of 4 marks the topic learned and the loop moves to
-   the next gap. Below that, the questions the student missed are handed back to
-   Nexora, which explains the same idea a different way with a fresh example,
-   and a new check is generated. This repeats until the topic is learned.
+### The graph
 
-Readiness is the baseline score plus the ground closed by mastered topics, so
-it visibly rises with each topic proved and tops out at 95% when all are done.
-Loop constants (`CHECK_SIZE`, `CHECK_PASS`) live in `src/data/catalog.ts`.
+Claude reads the syllabus once and returns 15-40 *concepts* — things that can
+be taught in about ten minutes and then tested — plus the prerequisite edges
+between them. The server then does the parts a language model shouldn't be
+trusted with: dropping edges that point nowhere, breaking cycles, computing
+depth, and normalising weights so they sum to 1.
 
-## Nexora chat (Claude)
+Each node carries both the curriculum facts (chapter, summary, exam weight,
+difficulty) and this student's standing on it (strength, attempts, what they
+got wrong last time, when it needs revising).
 
-The tutor chat is backed by a Supabase Edge Function that calls the Claude
-Messages API and streams the reply back to the app as SSE. **The Anthropic API
-key lives only in the function** — it is never shipped in the app bundle.
+### Why a graph and not a list of topics
 
-### 1. Create the function's secret
+Because it can answer *why* a student is stuck. When someone keeps failing
+ratio word problems, the cause is usually that equivalent fractions were never
+solid. A flat topic list can only drill the thing being failed. The planner
+walks **down** the prerequisite chain to the shallowest thing that is actually
+teachable right now, and says so:
+
+> Ratio word problems is what the exam wants, but it needs Equivalent
+> fractions first — and that one isn't solid yet. Fixing it here unlocks Ratio
+> word problems.
+
+### Choosing what to do next
+
+`nextStep` is pure logic — no Claude call, so it is instant and testable:
+
+1. **Decay.** Strength is discounted by time since it was last proved
+   (14-day half-life), so a topic passed three weeks ago and never revisited
+   stops counting as solid.
+2. **Revision first** when three or more concepts have gone stale, or when the
+   exam is within a week — holding what you have beats starting something new.
+3. **Value.** Otherwise pick the unmastered concept with the highest
+   `weight × (1 − strength)`, leaning harder on exam weight and away from deep
+   foundations as the exam approaches.
+4. **Descend.** If that concept has unmastered prerequisites, drop to the
+   weakest one and target that instead, recording what it unlocks.
+
+Readiness is `Σ(weight × strength) / Σ(weight)` — weighted by what the exam
+actually asks for, not a count of topics ticked off.
+
+### The loop, per concept
+
+Nexora teaches the concept (streamed), then a check of 4 generated questions
+proves it. Questions are generated per attempt, so a retry can't be passed by
+remembering which option was right; later attempts are told exactly what was
+missed and asked for new angles on the same idea. Three of four marks it
+learned and the planner moves on; below that, the misses feed back into the
+next lesson.
+
+**Grading happens on the server.** The client receives questions without the
+answer key and posts back which options were picked. Mastery drives the entire
+plan, so a client that could write it could declare itself finished.
+
+## Backend
+
+Firebase: Firestore for the graph, Cloud Functions for everything that touches
+Claude or mastery, Firebase Auth for identity.
+
+```
+students/{uid}
+  exams/{examId}
+    concepts/{conceptId}     the graph + this student's progress
+    attempts/{attemptId}     every graded check, for history
+    threads/{conceptId}      the lesson conversation
+    pendingChecks/{checkId}  answer keys in flight — no client access at all
+```
+
+| Function | Kind | What it does |
+| --- | --- | --- |
+| `buildGraph` | callable | Syllabus → concept graph. Slow; 9-minute timeout. |
+| `getGraph` | callable | The graph plus this student's standing. |
+| `nextStep` | callable | What to study now, and why. Pure logic. |
+| `startCheck` | callable | Generates a check; keeps the answer key server-side. |
+| `submitCheck` | callable | Grades, updates mastery, returns the next step. |
+| `tutor` | request (SSE) | Streams a lesson scoped to one concept. |
+| `resetThread` | callable | Clears a concept's lesson thread. |
+
+Security rules put everything under `students/{uid}` behind one ownership
+check. Concepts, attempts and threads are **read-only** to the client — only
+the functions' admin SDK writes them — and `pendingChecks` is denied outright.
+
+### Setup
 
 ```bash
-supabase link --project-ref <your-project-ref>
-supabase secrets set ANTHROPIC_API_KEY=<your-anthropic-key>
+firebase use --add                     # pick or create your project
+firebase functions:secrets:set ANTHROPIC_API_KEY
+firebase deploy --only firestore:rules,firestore:indexes,functions
 ```
 
-For local runs, copy `supabase/functions/.env.example` to
-`supabase/functions/.env` and put the key there instead (it is gitignored).
+Copy `.env.example` to `.env` and fill in the `EXPO_PUBLIC_FIREBASE_*` values
+from your Firebase web app config. `EXPO_PUBLIC_*` is inlined at bundle time,
+so restart the dev server after changing them.
 
-### 2. Deploy the function
+### Running it locally
 
 ```bash
-supabase functions deploy nexora
-supabase functions deploy practice
+cd functions && npm install && npm test
+firebase emulators:start --only functions,firestore,auth --project demo-studybuddy
 ```
 
-Or serve them locally (needs Docker):
+Set `EXPO_PUBLIC_FIREBASE_EMULATOR=1` to point the app at it. Emulated
+functions still call the real Claude API, so put a key in
+`functions/.secret.local` for anything beyond `nextStep`/`getGraph`.
 
-```bash
-supabase functions serve
-```
-
-### 3. Point the app at it
-
-Copy `.env.example` to `.env` and fill in:
-
-```
-EXPO_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<your anon / publishable key>
-```
-
-`EXPO_PUBLIC_*` values are inlined at bundle time, so **restart the dev server**
-after changing them. Until they are set, the chat screen shows a "not connected"
-notice instead of failing.
+`cd functions && npm test` runs the graph and planner tests — decay, cycle
+breaking, weight normalisation, and the prerequisite descent — with no
+network and no emulator.
 
 ## Layout
 
@@ -83,24 +134,38 @@ notice instead of failing.
 | `App.tsx`, `src/Router.tsx` | Font loading, providers, and the route switch |
 | `src/state/AppState.tsx` | All app state and actions, incl. readiness/mastery scoring |
 | `src/screens/` | One file per screen (18 of them) |
-| `src/services/nexora.ts` | Streaming client for the Nexora edge function |
-| `src/services/practice.ts` | Client for generated topic checks |
+| `src/services/firebase.ts` | Firebase app, auth, emulator wiring |
+| `src/services/backend.ts` | Typed client for the backend (graph, plan, checks, tutor) |
 | `src/theme/tokens.ts` | Colours, fonts, radii, shadows from the Organic design system |
 | `src/data/catalog.ts` | Subjects, topics, and baseline questions |
-| `supabase/functions/nexora/` | Deno edge function — streams the tutor conversation |
-| `supabase/functions/practice/` | Deno edge function — generates a fresh topic check |
+| `functions/src/graph.ts` | Syllabus → concept graph, plus cycle/depth/weight handling |
+| `functions/src/plan.ts` | The planner: what to study next, and why |
+| `functions/src/mastery.ts` | Strength, decay, and revision scheduling |
+| `functions/src/logic.test.ts` | Tests for all three of the above |
 
-## Known gaps
+## State of play
 
-- **State is in-memory.** Exams, answers, mastery, and chat threads all reset
-  on reload — a student cannot come back tomorrow and continue the loop. This is
-  the most important gap to close next.
-- **Checks need the backend.** Question generation is a live Claude call, so the
-  loop does not work offline; the check screen surfaces this rather than
-  silently failing.
-- **Auth is a stub.** Any 10-digit number and any 4-digit code get you in, and
-  the edge function is reachable with just the anon key — anyone holding it can
-  spend Anthropic tokens. Close this when real phone auth lands by verifying the
-  caller's JWT in the function.
-- **Syllabus upload is mocked.** The screen fabricates a filename and reuses the
-  hardcoded topic list rather than reading a real PDF.
+**The backend is built and verified.** Graph, planner, mastery, grading,
+security rules and all seven functions run and were exercised end-to-end
+against the emulator suite.
+
+**The screens have not moved onto it yet.** The app still runs the older
+in-memory loop over the hardcoded topic list in `src/data/catalog.ts`:
+`src/services/nexora.ts` and `practice.ts` are marked SUPERSEDED and point at
+the deleted Supabase functions, so chat and checks show their "not connected"
+notice until the migration happens. That migration is the next piece of work:
+
+1. Hold `examId` and the graph in `AppState` instead of local topic mastery.
+2. Drive Home from `nextStep` rather than the local focus calculation.
+3. Move the chat and check screens onto `src/services/backend.ts`.
+4. Delete `nexora.ts`, `practice.ts`, and the local mastery code they feed.
+
+Also still open:
+
+- **Auth screens are a stub.** `signInGuest()` is wired in
+  `src/services/firebase.ts`, but the OTP screens still accept any 4 digits.
+  Real phone sign-in needs `@react-native-firebase/auth` and a development
+  build — the Firebase JS SDK cannot do phone auth on native without reCAPTCHA.
+- **Syllabus upload is mocked.** `buildGraph` takes syllabus *text*; nothing
+  yet reads a PDF or photo and feeds it in.
+- **No Firebase project is configured.** `.firebaserc` holds a placeholder.
