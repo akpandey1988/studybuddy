@@ -8,6 +8,7 @@ import type { Response } from 'express';
 import type { Request } from 'firebase-functions/v2/https';
 import { MODEL, claude, friendlyError } from './claude.js';
 import { noteLesson } from './mastery.js';
+import { QuotaError, consumeQuota, refundQuota } from './quota.js';
 import { db, getExam, getNode, getNodes, getThread, setThread, updateProgress } from './store.js';
 import type { ChatTurn, ConceptNode } from './types.js';
 
@@ -75,12 +76,27 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // Same spend controls as the callables. Reserved before any Claude work.
+  try {
+    await consumeQuota(uid, 'tutor');
+  } catch (err) {
+    if (err instanceof QuotaError) {
+      res.status(429).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
   const [node, allNodes, thread] = await Promise.all([
     getNode(uid, examId, conceptId),
     getNodes(uid, examId),
     getThread(uid, examId, conceptId),
   ]);
-  if (!node) { res.status(404).json({ error: 'No such concept in this exam.' }); return; }
+  if (!node) {
+    await refundQuota(uid, 'tutor');
+    res.status(404).json({ error: 'No such concept in this exam.' });
+    return;
+  }
 
   const [studentSnap, exam] = await Promise.all([
     db().collection('students').doc(uid).get(),
@@ -149,6 +165,8 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
     }
     send({ type: 'done' });
   } catch (err) {
+    // Nothing was said, so don't charge them for the turn.
+    if (!reply.trim()) await refundQuota(uid, 'tutor');
     send({ type: 'error', error: friendlyError(err) });
   } finally {
     res.end();

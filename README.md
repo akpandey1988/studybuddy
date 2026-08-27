@@ -96,6 +96,32 @@ students/{uid}
 | `tutor` | request (SSE) | Streams a lesson scoped to one concept. |
 | `resetThread` | callable | Clears a concept's lesson thread. |
 
+### Spend controls
+
+Anonymous sign-in plus a necessarily public web API key means anyone can mint
+uids, so per-user limits alone would be trivially bypassed by farming
+accounts. Every operation that reaches Claude is therefore capped twice — per
+user and project-wide — in one Firestore transaction, reserved *before* any
+Claude work so a rejected request costs nothing (`functions/src/quota.ts`).
+Counters are readable by the student but writable only by the functions.
+
+Each function also carries a `maxInstances` ceiling (3 for `buildGraph`, the
+most expensive call), so a spike cannot fan out into an unbounded bill, and
+`sweepPendingChecks` clears abandoned answer keys daily.
+
+**App Check is wired but off.** `ENFORCE_APP_CHECK` in `functions/.env` flips
+it on; do that only once App Check providers are registered for web, iOS and
+Android, or every request will be rejected. Until then the global cap is what
+actually protects the bill — and note the tradeoff: a determined abuser can
+exhaust the daily global allowance and lock out real students until it resets.
+
+Run the cap tests against the emulator (no Claude calls, no cost):
+
+```bash
+firebase emulators:start --only firestore --project studybuddy-nexora
+node functions/quota-emulator.test.mjs
+```
+
 Security rules put everything under `students/{uid}` behind one ownership
 check. Concepts, attempts and threads are **read-only** to the client — only
 the functions' admin SDK writes them — and `pendingChecks` is denied outright.
@@ -169,8 +195,8 @@ computed on the client any more.
   accounts can be upgraded in place without losing the graph.
 - **Syllabus is text only.** `buildGraph` takes typed or pasted text; nothing
   reads a PDF or a photo of the syllabus sheet yet.
-- **One check at a time.** `pendingChecks` documents are deleted on submit but
-  an abandoned check is never cleaned up; a scheduled function should sweep
-  them.
+- **App Check is not enforced yet** (see Spend controls). Until it is, the
+  global daily cap is the only thing standing between a determined abuser and
+  your Anthropic bill — and hitting it locks out real students for the day.
 - **The social screens are still mock data** — Friends, Group, Call and Badges
   were never part of the graph work.

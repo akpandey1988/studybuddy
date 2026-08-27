@@ -34,6 +34,7 @@ yarn-error.*
 .env
 .env*.local
 functions/.secret.local
+!functions/.env
 functions/lib/
 .firebase/
 *-debug.log
