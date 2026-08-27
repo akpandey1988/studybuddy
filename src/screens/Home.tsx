@@ -77,10 +77,12 @@ export function HomeScreen() {
               <View style={[styles.readinessFill, { width: `${readiness}%` }]} />
             </View>
             <View style={styles.readinessFooter}>
-              <Text style={styles.readinessFooterText}>
+              <Text style={[styles.readinessFooterText, styles.footerLeft]} numberOfLines={1}>
                 {masteredCount} of {nodes.length} concepts learned
               </Text>
-              <Text style={styles.readinessFooterText}>Weighted by exam marks</Text>
+              <Text style={[styles.readinessFooterText, styles.footerRight]} numberOfLines={1}>
+                Weighted by exam marks
+              </Text>
             </View>
           </View>
 
@@ -188,7 +190,11 @@ const styles = StyleSheet.create({
   readinessValue: { fontFamily: fonts.heading, fontSize: 24, color: colors.accent2_700 },
   readinessTrack: { height: 14, borderRadius: 999, backgroundColor: colors.neutral200, overflow: 'hidden' },
   readinessFill: { height: '100%', borderRadius: 999, backgroundColor: colors.accent2_500 },
-  readinessFooter: { flexDirection: 'row', justifyContent: 'space-between' },
+  // Both labels grew with real data; without shrinking they overflow and run
+  // into each other.
+  readinessFooter: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  footerLeft: { flexShrink: 1 },
+  footerRight: { flexShrink: 1, textAlign: 'right' },
   readinessFooterText: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral700 },
   todayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   todayLabel: {

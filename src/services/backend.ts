@@ -6,7 +6,7 @@
 
 import { fetch } from 'expo/fetch';
 import { httpsCallable } from '@react-native-firebase/functions';
-import { REGION, functions, idToken, isConfigured } from './firebase';
+import { REGION, functions, idToken, isConfigured, projectId } from './firebase';
 import { BackendError } from './firebase';
 
 export { BackendError };
@@ -124,12 +124,13 @@ export const resetThread = (examId: string, conceptId: string) =>
   call<{ examId: string; conceptId: string }, { ok: boolean }>('resetThread', { examId, conceptId });
 
 function tutorUrl(): string {
-  const projectId = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
+  const id = projectId();
+  if (!id) throw new BackendError('Firebase is not configured on this build.');
   if (process.env.EXPO_PUBLIC_FIREBASE_EMULATOR === '1') {
     const host = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || 'localhost';
-    return `http://${host}:5001/${projectId}/${REGION}/tutor`;
+    return `http://${host}:5001/${id}/${REGION}/tutor`;
   }
-  return `https://${REGION}-${projectId}.cloudfunctions.net/tutor`;
+  return `https://${REGION}-${id}.cloudfunctions.net/tutor`;
 }
 
 /**

@@ -35,6 +35,16 @@ function wire() {
   connectFunctionsEmulator(getFunctions(getApp(), REGION), EMULATOR_HOST, 5001);
 }
 
+/**
+ * Read from the native config rather than an env var. The project id used to
+ * come from EXPO_PUBLIC_FIREBASE_PROJECT_ID, which stopped existing when
+ * config moved into google-services.json — leaving the tutor URL pointing at
+ * `asia-south1-undefined` and 404ing.
+ */
+export function projectId(): string {
+  return getApp().options.projectId ?? '';
+}
+
 export function isConfigured(): boolean {
   // google-services.json is compiled in; if the native module loaded, we're set.
   try {
