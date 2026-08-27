@@ -5,7 +5,7 @@
 // wrapper — it deliberately holds no scoring logic of its own.
 
 import { fetch } from 'expo/fetch';
-import { httpsCallable } from 'firebase/functions';
+import { httpsCallable } from '@react-native-firebase/functions';
 import { REGION, functions, idToken, isConfigured } from './firebase';
 import { BackendError } from './firebase';
 

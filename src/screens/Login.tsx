@@ -1,12 +1,14 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { CtaButton, Spacer } from '../components/UI';
+import { GoogleMark } from '../components/Icons';
 import { useApp } from '../state/AppState';
 import { colors, fonts } from '../theme/tokens';
 
 export function LoginScreen() {
-  const { phone, phoneOk, busy, actions } = useApp();
+  const { phone, phoneOk, busy, error, actions } = useApp();
+  const working = busy === 'auth';
 
   return (
     <Screen style={styles.content}>
@@ -31,13 +33,30 @@ export function LoginScreen() {
             style={styles.phoneInput}
           />
         </View>
-        <Text style={styles.helper}>We'll text a 4-digit code. A parent's number works too.</Text>
+        <Text style={styles.helper}>We'll text you a code. A parent's number works too.</Text>
+        {error && <Text style={styles.error}>{error}</Text>}
       </View>
 
       <Spacer />
 
       <View style={{ gap: 14 }}>
-        <CtaButton label={busy === 'auth' ? 'Getting ready…' : 'Send me a code'} active={phoneOk && busy !== 'auth'} onPress={actions.sendCode} />
+        <CtaButton
+          label={working ? 'Sending…' : 'Send me a code'}
+          active={phoneOk && !working}
+          onPress={actions.sendCode}
+        />
+
+        <View style={styles.orRow}>
+          <View style={styles.orLine} />
+          <Text style={styles.orText}>or</Text>
+          <View style={styles.orLine} />
+        </View>
+
+        <Pressable onPress={actions.signInGoogle} disabled={working} style={[styles.google, working && styles.googleBusy]}>
+          <GoogleMark size={20} />
+          <Text style={styles.googleLabel}>Continue with Google</Text>
+        </Pressable>
+
         <Text style={styles.footer}>By continuing you agree to study for 25 minutes a day. Mostly.</Text>
       </View>
     </Screen>
@@ -69,5 +88,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5, paddingVertical: 14, paddingHorizontal: 8, color: colors.text,
   },
   helper: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral600 },
+  error: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent700, lineHeight: 19 },
+  orRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  orLine: { flex: 1, height: 2, backgroundColor: colors.neutral200 },
+  orText: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral600 },
+  google: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
+    backgroundColor: '#fff', borderWidth: 2, borderColor: colors.neutral300,
+    borderRadius: 999, paddingVertical: 15,
+  },
+  googleBusy: { opacity: 0.6 },
+  googleLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 16, color: colors.neutral800 },
   footer: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, textAlign: 'center', color: colors.neutral600 },
 });

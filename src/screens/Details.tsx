@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { Chip, CtaButton, Kicker, NexoraNote } from '../components/UI';
 import { useApp } from '../state/AppState';
@@ -9,7 +9,7 @@ const GRADES = [4, 5, 6, 7, 8];
 const BOARDS = ['CBSE', 'ICSE', 'State board', 'IB / Other'];
 
 export function DetailsScreen() {
-  const { name, grade, board, detailsOk, busy, error, actions } = useApp();
+  const { name, grade, board, detailsOk, busy, error, guestProgressLost, actions } = useApp();
 
   const detailsNote = grade === null
     ? 'Your grade and board tell me which syllabus to expect.'
@@ -21,6 +21,18 @@ export function DetailsScreen() {
         <Kicker>Nearly there</Kicker>
         <Text style={styles.h1}>Tell me about you</Text>
       </View>
+
+      {/* Signing in found an existing account, so anything done as a guest on
+          this phone belongs to a different uid and cannot come across. */}
+      {guestProgressLost && (
+        <Pressable onPress={actions.dismissGuestWarning} style={styles.notice}>
+          <Text style={styles.noticeText}>
+            You already had an account, so we've signed you into that one. Anything you
+            did before signing in on this phone stays with the guest session.
+          </Text>
+          <Text style={styles.noticeDismiss}>Got it</Text>
+        </Pressable>
+      )}
 
       <View style={{ gap: 8 }}>
         <Text style={styles.label}>Your name</Text>
@@ -65,6 +77,12 @@ export function DetailsScreen() {
 }
 
 const styles = StyleSheet.create({
+  notice: {
+    backgroundColor: colors.accent100, borderRadius: 16, borderWidth: 2,
+    borderColor: colors.accent300, padding: 14, gap: 6,
+  },
+  noticeText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.accent900 },
+  noticeDismiss: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 14, color: colors.accent700 },
   content: { paddingTop: 70, paddingBottom: 40, gap: 20 },
   h1: { fontFamily: fonts.heading, fontSize: 30, lineHeight: 33, color: colors.text },
   label: {

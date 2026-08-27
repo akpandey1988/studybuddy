@@ -4,12 +4,8 @@
 // security rules make concepts, attempts and threads read-only, because
 // mastery must come from graded checks rather than the client's word for it.
 
-import {
-  collection, doc, getDoc, getDocs, getFirestore, setDoc,
-} from 'firebase/firestore';
-import { app } from './firebase';
-
-const db = () => getFirestore(app());
+import { collection, doc, getDoc, getDocs, setDoc } from '@react-native-firebase/firestore';
+import { db } from './firebase';
 
 export type Profile = { name: string; grade: number | null; board: string | null };
 

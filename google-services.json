@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "737362154472",
+    "project_id": "studybuddy-nexora",
+    "storage_bucket": "studybuddy-nexora.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:737362154472:android:d863c77e7596a2bf264a5d",
+        "android_client_info": {
+          "package_name": "com.nexora.studybuddy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1cbPz8Kxoelu56A57g6MqtkG9ZMWDbRg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

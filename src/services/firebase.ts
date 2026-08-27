@@ -1,90 +1,53 @@
-// Firebase app, auth and callable wiring for the client.
+// Firebase wiring, on React Native Firebase.
 //
-// Only publishable config lives here — EXPO_PUBLIC_* values are inlined into
-// the bundle. The Anthropic key never appears on this side; it is a Secret
-// Manager secret read by the Cloud Functions.
+// This is the native SDK rather than the JS one because phone auth needs it:
+// the JS SDK's phone flow depends on RecaptchaVerifier, which needs a DOM.
+// Auth, Firestore and Functions all have to come from the same SDK — Firestore
+// takes its auth token from its own SDK's auth instance, so a mixed setup
+// sends unauthenticated reads and the rules reject them.
+//
+// Config comes from google-services.json at build time, not from env vars.
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
-import { getApp, getApps, initializeApp } from 'firebase/app';
-import * as firebaseAuth from 'firebase/auth';
+import { getApp } from '@react-native-firebase/app';
 import {
-  connectAuthEmulator, getAuth, initializeAuth, onAuthStateChanged, signInAnonymously,
-} from 'firebase/auth';
-import type { Auth, Persistence } from 'firebase/auth';
-import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
-import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
-import type { User } from 'firebase/auth';
+  connectAuthEmulator, getAuth, onAuthStateChanged, signInAnonymously,
+} from '@react-native-firebase/auth';
+import { connectFirestoreEmulator, getFirestore } from '@react-native-firebase/firestore';
+import { connectFunctionsEmulator, getFunctions } from '@react-native-firebase/functions';
+import type { User as FirebaseUser } from '@react-native-firebase/auth';
 
-const config = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-};
+export type User = FirebaseUser;
 
-/** Functions run in Mumbai — must match the region declared in functions/src/index.ts. */
+/** Must match the region the functions declare. */
 export const REGION = 'asia-south1';
 
-/** Point at a locally running emulator suite instead of the real project. */
 const USE_EMULATOR = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR === '1';
 const EMULATOR_HOST = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || 'localhost';
 
+let wired = false;
+
+function wire() {
+  if (wired) return;
+  wired = true;
+  if (!USE_EMULATOR) return;
+  connectAuthEmulator(getAuth(), `http://${EMULATOR_HOST}:9099`);
+  connectFirestoreEmulator(getFirestore(), EMULATOR_HOST, 8080);
+  connectFunctionsEmulator(getFunctions(getApp(), REGION), EMULATOR_HOST, 5001);
+}
+
 export function isConfigured(): boolean {
-  return Boolean(config.projectId && config.apiKey);
+  // google-services.json is compiled in; if the native module loaded, we're set.
+  try {
+    getApp();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-/**
- * On React Native the Firebase JS SDK defaults to in-memory auth persistence,
- * so every cold start would mint a brand new anonymous uid and orphan the
- * student's whole knowledge graph. The RN build of firebase/auth ships
- * getReactNativePersistence, but the published types describe the browser
- * build, hence the cast.
- */
-const reactNativePersistence = (firebaseAuth as unknown as {
-  getReactNativePersistence?: (storage: unknown) => Persistence;
-}).getReactNativePersistence;
-
-let started = false;
-let authInstance: Auth | null = null;
-
-export function app() {
-  if (getApps().length === 0) {
-    initializeApp(config as Required<typeof config>);
-  }
-  const instance = getApp();
-
-  if (!authInstance) {
-    if (Platform.OS !== 'web' && reactNativePersistence) {
-      // Must run before any getAuth() call, and only once.
-      authInstance = initializeAuth(instance, {
-        persistence: reactNativePersistence(AsyncStorage),
-      });
-    } else {
-      // Browsers persist to localStorage on their own.
-      authInstance = getAuth(instance);
-    }
-  }
-
-  if (!started) {
-    started = true;
-    if (USE_EMULATOR) {
-      connectAuthEmulator(authInstance, `http://${EMULATOR_HOST}:9099`, { disableWarnings: true });
-      connectFunctionsEmulator(getFunctions(instance, REGION), EMULATOR_HOST, 5001);
-      // Firestore too, or client reads would quietly go to the real project.
-      connectFirestoreEmulator(getFirestore(instance), EMULATOR_HOST, 8080);
-    }
-  }
-  return instance;
-}
-
-export const auth = () => {
-  app();
-  return authInstance as Auth;
-};
-export const functions = () => getFunctions(app(), REGION);
+export const auth = () => { wire(); return getAuth(); };
+export const db = () => { wire(); return getFirestore(); };
+export const functions = () => { wire(); return getFunctions(getApp(), REGION); };
 
 export function currentUser(): User | null {
   return isConfigured() ? auth().currentUser : null;
@@ -99,8 +62,8 @@ export function watchAuth(fn: (user: User | null) => void): () => void {
 }
 
 /**
- * Every request to the backend carries this. Functions verify it and derive
- * the uid from it — the client never says who it is.
+ * Every backend request carries this. The functions verify it and derive the
+ * uid from it — the client never asserts who it is.
  */
 export async function idToken(): Promise<string> {
   const user = currentUser();
@@ -108,7 +71,10 @@ export async function idToken(): Promise<string> {
   return user.getIdToken();
 }
 
-/** A uid without a phone number, so a student can start before signing up. */
+/**
+ * A uid before any sign-in, so a student can start using the app immediately.
+ * Signing in later links onto this same account, keeping their graph.
+ */
 export async function signInGuest(): Promise<User> {
   const cred = await signInAnonymously(auth());
   return cred.user;

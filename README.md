@@ -14,13 +14,47 @@ Node 20+ is required.
 
 ### On a phone
 
-Everything the app uses runs in **Expo Go** — no native build or Android SDK
-needed:
+Phone and Google sign-in need native modules, so **Expo Go no longer works** —
+the app needs a development build. There is no Android SDK required locally;
+EAS builds it in the cloud:
 
 ```bash
-npx expo start --lan          # then scan the QR, or:
-adb shell am start -a android.intent.action.VIEW -d "exp://<your-lan-ip>:8081"
+eas login
+eas build --profile development --platform android
+adb install <the-apk-it-gives-you>
+npx expo start --dev-client --lan
 ```
+
+## Sign-in
+
+A student gets an anonymous uid the moment they open the app, so they can
+start before signing up. Signing in later **links** the phone or Google
+credential onto that same account (`linkWithCredential`), so their knowledge
+graph carries over. If the credential already belongs to another account we
+sign into that one instead and say plainly that the guest work stays behind —
+merging two graphs is a different, larger job.
+
+This runs on **React Native Firebase**, not the JS SDK. Phone auth on the JS
+SDK needs `RecaptchaVerifier`, which needs a DOM, and the SDKs cannot be
+mixed: Firestore takes its auth token from its own SDK's auth instance, so a
+split setup sends unauthenticated reads that the rules reject. The cost is
+that the web build no longer runs.
+
+### Console setup
+
+1. **Authentication > Sign-in method**: enable **Phone** and **Google**.
+2. Copy the **Web client ID** from the Google provider into
+   `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` in `.env`.
+3. After the first EAS build, add its signing SHA-1 to the Firebase Android
+   app, then re-download `google-services.json`:
+
+   ```bash
+   eas credentials --platform android      # read the SHA-1
+   firebase apps:sdkconfig ANDROID <app-id> --out google-services.json
+   ```
+
+   Google Sign-In fails with a bare `DEVELOPER_ERROR` until that SHA-1 is
+   registered — it is the most common way to get stuck here.
 
 ## How it works
 

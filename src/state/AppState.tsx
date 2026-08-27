@@ -2,7 +2,11 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { BackHandler } from 'react-native';
 import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, dateLabel } from '../data/catalog';
 import * as backend from '../services/backend';
-import { BackendError, isConfigured, signInGuest, watchAuth } from '../services/firebase';
+import { BackendError, auth, isConfigured, signInGuest, watchAuth } from '../services/firebase';
+import {
+  AuthError, confirmPhoneCode, signInWithGoogle, startPhoneSignIn,
+} from '../services/auth';
+import type { ConfirmationResult } from '@react-native-firebase/auth';
 import { loadExams, loadProfile, newExamId, saveProfile } from '../services/store';
 import type { Busy, CheckState, Route } from './types';
 import type { ConceptNode, NextStep } from '../services/backend';
@@ -10,6 +14,8 @@ import type { ExamRecord } from '../services/store';
 import type { Attachment } from '../services/syllabusInput';
 
 const DAY_MS = 86_400_000;
+/** Firebase sends a 6-digit SMS code; the old stub assumed 4. */
+export const OTP_LENGTH = 6;
 
 const emptyCheck = (): CheckState => ({
   conceptId: null, conceptName: '', checkId: null,
@@ -46,6 +52,10 @@ function useAppStateImpl() {
 
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Handle for the SMS in flight, between sending and confirming the code. */
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  /** Set when signing in had to abandon guest work (credential already used). */
+  const [guestProgressLost, setGuestProgressLost] = useState(false);
 
   const go = useCallback((r: Route) => setRoute(r), []);
 
@@ -85,7 +95,8 @@ function useAppStateImpl() {
     return () => sub.remove();
   }, [route, BACK_TO]);
   const fail = useCallback((e: unknown) => {
-    setError(e instanceof BackendError ? e.message : (e as Error).message || 'Something went wrong.');
+    const known = e instanceof BackendError || e instanceof AuthError;
+    setError(known ? (e as Error).message : (e as Error).message || 'Something went wrong.');
   }, []);
 
   // ── boot ────────────────────────────────────────────────────────────────
@@ -136,6 +147,9 @@ function useAppStateImpl() {
           const ready = list.find((e) => e.graphStatus === 'ready');
           if (ready) { setActiveExamId(ready.id); setRoute('home'); }
           else setRoute('exams');
+        } else if (!auth().currentUser?.isAnonymous) {
+          // Signed in, but we have never asked their name — finish onboarding.
+          setRoute('details');
         }
       } catch (e) {
         if (!cancelled) fail(e);
@@ -175,9 +189,9 @@ function useAppStateImpl() {
 
   // ── derived ─────────────────────────────────────────────────────────────
   const digits = phone.replace(/\D/g, '');
-  const otpDigits = otp.replace(/\D/g, '').slice(0, 4);
+  const otpDigits = otp.replace(/\D/g, '').slice(0, OTP_LENGTH);
   const phoneOk = digits.length === 10;
-  const otpOk = otpDigits.length === 4;
+  const otpOk = otpDigits.length === OTP_LENGTH;
   const detailsOk = name.trim().length > 1 && grade !== null && board !== null;
 
   const activeExam = exams.find((e) => e.id === activeExamId) ?? null;
@@ -203,7 +217,7 @@ function useAppStateImpl() {
   // ── actions ─────────────────────────────────────────────────────────────
   const actions = useMemo(() => ({
     setPhone: (v: string) => setPhoneRaw(v.replace(/[^\d ]/g, '').slice(0, 11)),
-    setOtp: (v: string) => setOtpRaw(v.replace(/\D/g, '').slice(0, 4)),
+    setOtp: (v: string) => setOtpRaw(v.replace(/\D/g, '').slice(0, OTP_LENGTH)),
     setName,
     pickGrade: setGrade,
     pickBoard: setBoard,
@@ -226,9 +240,45 @@ function useAppStateImpl() {
     goParent: () => go('parent'),
     goNexora: () => go('nexora'),
 
-    // Phone entry is still local — real SMS needs a dev build (see README).
-    sendCode: () => { if (phoneOk) { setOtpRaw(''); go('otp'); } },
-    verifyOtp: () => { if (otpOk) go('details'); },
+    /** Send a real SMS. Only advances once Firebase has accepted the number. */
+    sendCode: async () => {
+      if (!phoneOk || busy === 'auth') return;
+      setBusy('auth');
+      setError(null);
+      try {
+        setConfirmation(await startPhoneSignIn(phone));
+        setOtpRaw('');
+        go('otp');
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    verifyOtp: async () => {
+      if (!otpOk || !confirmation || busy === 'auth') return;
+      setBusy('auth');
+      setError(null);
+      try {
+        const result = await confirmPhoneCode(confirmation, otp);
+        setGuestProgressLost(result.guestProgressAbandoned);
+        setConfirmation(null);
+        // Where they land is decided by whether this account already has a
+        // profile — the auth listener loads it and routes accordingly.
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    signInGoogle: async () => {
+      if (busy === 'auth') return;
+      setBusy('auth');
+      setError(null);
+      try {
+        const result = await signInWithGoogle();
+        if (!result) return;           // cancelled
+        setGuestProgressLost(result.guestProgressAbandoned);
+        // Google gives us a name, so don't make them type it again.
+        if (result.user.displayName && !name) setName(result.user.displayName);
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    dismissGuestWarning: () => setGuestProgressLost(false),
 
     finishDetails: async () => {
       if (!detailsOk || !uid) return;
@@ -382,13 +432,14 @@ function useAppStateImpl() {
     consumeReteachAsk: () => setReteachAsk(null),
     finishCheck: () => { setCheck(emptyCheck()); setResult(null); go('home'); },
   }), [
-    go, fail, uid, phoneOk, otpOk, detailsOk, name, grade, board, atCap, prime,
+    go, fail, uid, phone, otp, phoneOk, otpOk, detailsOk, name, grade, board, atCap, prime,
+    busy, confirmation,
     exams, draftSubject, draftSyllabus, draftFile, draftDays, activeExamId, plan, check, result,
     readyExams, loadGraph, refreshExams,
   ]);
 
   return {
-    route, uid, authReady, busy, error,
+    route, uid, authReady, busy, error, guestProgressLost,
     phone, otp, name, grade, board, prime,
     digits, otpDigits, phoneOk, otpOk, detailsOk, firstName,
     exams, activeExam, activeExamId, activeName, readyExams, pendingExams, atCap, needsPrime,

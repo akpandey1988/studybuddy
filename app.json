@@ -17,7 +17,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.nexora.studybuddy"
+      "package": "com.nexora.studybuddy",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,7 +30,11 @@
           "cameraPermission": "StudyBuddy uses the camera so you can photograph your syllabus sheet and Nexora can build your study plan from it.",
           "photosPermission": "StudyBuddy needs your photos so you can pick an existing picture of your syllabus."
         }
-      ]
-    ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-google-signin/google-signin"
+    ],
+    "scheme": "studybuddy"
   }
 }
