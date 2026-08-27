@@ -38,6 +38,8 @@ function useAppStateImpl() {
 
   const [check, setCheck] = useState<CheckState>(emptyCheck());
   const [result, setResult] = useState<backend.CheckResult | null>(null);
+  /** Queued ask for the tutor after a failed check — consumed by the chat. */
+  const [reteachAsk, setReteachAsk] = useState<string | null>(null);
 
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
@@ -312,12 +314,29 @@ function useAppStateImpl() {
       } catch (e) { fail(e); } finally { setBusy(null); }
     },
 
-    /** Failed the check — go back into the lesson for another angle. */
-    reteach: () => { setCheck(emptyCheck()); go('nexora'); },
+    /**
+     * Failed the check — go back into the lesson and make Nexora come at it
+     * again. The server already knows which questions were missed (it stored
+     * them on the concept), so this only has to ask for a different angle.
+     */
+    reteach: () => {
+      const missed = result?.questions
+        .filter((q, i) => check.picks[i] !== q.answer)
+        .map((q) => q.q) ?? [];
+      setReteachAsk(
+        missed.length
+          ? `I just took the check and got these wrong:\n${missed.map((m) => `- ${m}`).join('\n')}\n`
+            + 'Explain that idea a different way, with a fresh everyday example, then ask me one question about it.'
+          : 'I did not pass that check. Explain it a different way with a fresh example, then ask me one question.',
+      );
+      setCheck(emptyCheck());
+      go('nexora');
+    },
+    consumeReteachAsk: () => setReteachAsk(null),
     finishCheck: () => { setCheck(emptyCheck()); setResult(null); go('home'); },
   }), [
     go, fail, uid, phoneOk, otpOk, detailsOk, name, grade, board, atCap, prime,
-    exams, draftSubject, draftSyllabus, draftDays, activeExamId, plan, check,
+    exams, draftSubject, draftSyllabus, draftDays, activeExamId, plan, check, result,
     readyExams, loadGraph, refreshExams,
   ]);
 
@@ -328,7 +347,7 @@ function useAppStateImpl() {
     exams, activeExam, activeExamId, activeName, readyExams, pendingExams, atCap, needsPrime,
     nodes, plan, focusNode, readiness, masteredCount, byId,
     subjectOptions, draftSubject, draftDays, draftSyllabus, draftPct,
-    check, checkQ, checkTotal, result,
+    check, checkQ, checkTotal, result, reteachAsk,
     actions,
   };
 }

@@ -15,7 +15,7 @@ import { colors, fonts, radius, shadow } from '../theme/tokens';
  * across devices and reloads; this screen holds only the reply being streamed.
  */
 export function NexoraChatScreen() {
-  const { activeExamId, plan, focusNode, actions } = useApp();
+  const { activeExamId, plan, focusNode, reteachAsk, actions } = useApp();
 
   const [turns, setTurns] = React.useState<ChatTurn[]>([]);
   const [draft, setDraft] = React.useState('');
@@ -28,7 +28,7 @@ export function NexoraChatScreen() {
   const abort = React.useRef<AbortController | null>(null);
   const conceptId = plan?.conceptId ?? null;
 
-  const send = React.useCallback(async (message?: string) => {
+  const send = React.useCallback(async (message?: string, hidden = false) => {
     if (!activeExamId || !conceptId) return;
     setSending(true);
     setError(null);
@@ -39,7 +39,7 @@ export function NexoraChatScreen() {
     let reply = '';
 
     try {
-      for await (const chunk of streamTutor(activeExamId, conceptId, message, controller.signal)) {
+      for await (const chunk of streamTutor(activeExamId, conceptId, message, controller.signal, hidden)) {
         reply += chunk;
         setDraft(reply);
       }
@@ -82,6 +82,20 @@ export function NexoraChatScreen() {
 
     return () => { cancelled = true; };
   }, [activeExamId, conceptId, send]);
+
+  // Arriving from a failed check: ask Nexora to teach it again, differently.
+  React.useEffect(() => {
+    if (!reteachAsk || !activeExamId || !conceptId || sending) return;
+    const ask = reteachAsk;
+    actions.consumeReteachAsk();
+    (async () => {
+      const { turns: existing } = await getThread(activeExamId, conceptId).catch(() => ({ turns: [] }));
+      setTurns(existing);
+      setLoading(false);
+      opened.current = conceptId;
+      await send(ask, true);
+    })();
+  }, [reteachAsk, activeExamId, conceptId, sending, actions, send]);
 
   React.useEffect(() => () => abort.current?.abort(), []);
 

@@ -69,7 +69,7 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const { examId, conceptId, message } = req.body ?? {};
+  const { examId, conceptId, message, hidden } = req.body ?? {};
   if (!examId || !conceptId) {
     res.status(400).json({ error: 'examId and conceptId are required' });
     return;
@@ -92,7 +92,9 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
   const turns: ChatTurn[] = thread.length === 0
     ? [{ role: 'user', content: KICKOFF, hidden: true }]
     : message
-      ? [...thread, { role: 'user', content: String(message) }]
+      // A re-teach ask is prompt scaffolding, not something the student said,
+      // so it is stored hidden and never rendered back into the thread.
+      ? [...thread, { role: 'user' as const, content: String(message), hidden: Boolean(hidden) }]
       : thread;
 
   // A fresh thread means a new lesson on this concept.

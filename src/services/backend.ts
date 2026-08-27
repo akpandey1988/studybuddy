@@ -60,12 +60,23 @@ export type CheckResult = {
   next: NextStep;
 };
 
+/**
+ * The callable SDK defaults to a 70s client timeout. buildGraph is a large
+ * reasoning call with a 540s server timeout, so the default would abandon a
+ * request the server is still working on — and the student would see a
+ * failure for a graph that then lands anyway.
+ */
+const TIMEOUTS: Record<string, number> = {
+  buildGraph: 540_000,
+  startCheck: 180_000,
+};
+
 async function call<Req, Res>(name: string, data: Req): Promise<Res> {
   if (!isConfigured()) {
     throw new BackendError('The backend is not configured. See README.md for the EXPO_PUBLIC_FIREBASE_* values.');
   }
   try {
-    const fn = httpsCallable<Req, Res>(functions(), name);
+    const fn = httpsCallable<Req, Res>(functions(), name, { timeout: TIMEOUTS[name] ?? 70_000 });
     return (await fn(data)).data;
   } catch (err) {
     // Callable errors arrive with the server's message already attached.
@@ -128,6 +139,8 @@ export async function* streamTutor(
   conceptId: string,
   message?: string,
   signal?: AbortSignal,
+  /** Send the message to Claude but keep it out of the visible thread. */
+  hidden = false,
 ): AsyncGenerator<string> {
   if (!isConfigured()) {
     throw new BackendError('The backend is not configured. See README.md.');
@@ -140,7 +153,7 @@ export async function* streamTutor(
       method: 'POST',
       signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ examId, conceptId, message }),
+      body: JSON.stringify({ examId, conceptId, message, hidden }),
     });
   } catch {
     throw new BackendError("Nexora can't be reached. Check your connection and try again.");
