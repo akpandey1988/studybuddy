@@ -21,7 +21,8 @@ const whenLabel = (ms: number) => {
 };
 
 export function ExamsHubScreen() {
-  const { exams, prime, readyExams, atCap, needsPrime, actions } = useApp();
+  const { exams, prime, readyExams, atCap, needsPrime, busy, account, actions } = useApp();
+  const who = account.phoneNumber || account.email || null;
 
   const examsIntro = exams.length === 0
     ? "Start with the exam that's closest — the first one is free. I'll split each day between your exams by how close each one is."
@@ -69,12 +70,27 @@ export function ExamsHubScreen() {
         <Text style={styles.footerLink}>{footerText}</Text>
       </Pressable>
 
-      <CtaButton label="Go to today's plan" active={readyExams.length > 0} onPress={actions.examsCta} style={{ marginTop: 'auto' as const }} />
+      <View style={{ marginTop: 'auto' as const, gap: 10 }}>
+        <CtaButton label="Go to today's plan" active={readyExams.length > 0} onPress={actions.examsCta} />
+        {/* The only account screen sits behind Progress, which needs an exam —
+            so a student with none could otherwise never sign out. */}
+        <Pressable onPress={account.isGuest ? actions.goLogin : actions.signOut} disabled={busy === 'auth'}>
+          <Text style={styles.account}>
+            {busy === 'auth' ? 'Signing out…'
+              : account.isGuest ? 'Sign in to save your progress'
+                : `Sign out${who ? ` · ${who}` : ''}`}
+          </Text>
+        </Pressable>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  account: {
+    fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 14,
+    color: colors.accent700, textAlign: 'center', paddingVertical: 8,
+  },
   content: { paddingTop: 70, paddingBottom: 40, gap: 18 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   h1: { fontFamily: fonts.heading, fontSize: 30, lineHeight: 33, color: colors.text },

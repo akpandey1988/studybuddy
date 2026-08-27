@@ -26,6 +26,9 @@ function useAppStateImpl() {
   const [route, setRoute] = useState<Route>('login');
   const [uid, setUid] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  /** Tracked from the auth listener; reading currentUser can race with it. */
+  const [isGuest, setIsGuest] = useState(true);
+  const [signedInAs, setSignedInAs] = useState<{ phone: string | null; email: string | null }>({ phone: null, email: null });
 
   // Profile. Kept in local state while being typed, persisted on Continue.
   const [phone, setPhoneRaw] = useState('');
@@ -108,6 +111,8 @@ function useAppStateImpl() {
     const stop = watchAuth(async (user) => {
       if (user) {
         setUid(user.uid);
+        setIsGuest(user.isAnonymous);
+        setSignedInAs({ phone: user.phoneNumber, email: user.email });
         setAuthReady(true);
       } else if (!booted.current) {
         booted.current = true;
@@ -118,6 +123,8 @@ function useAppStateImpl() {
         // Signed out. Drop every trace of the previous student, or their uid
         // lingers and the app keeps reading a graph it can no longer see.
         setUid(null);
+        setIsGuest(true);
+        setSignedInAs({ phone: null, email: null });
         setExams([]);
         setActiveExamId(null);
         setNodes([]);
@@ -163,8 +170,9 @@ function useAppStateImpl() {
           const ready = list.find((e) => e.graphStatus === 'ready');
           if (ready) { setActiveExamId(ready.id); setRoute('home'); }
           else setRoute('exams');
-        } else if (!auth().currentUser?.isAnonymous) {
-          // Signed in, but we have never asked their name — finish onboarding.
+        } else if (!isGuest) {
+          // Genuinely signed in but with no profile yet — finish onboarding.
+          // A guest belongs on the login screen, not in the middle of it.
           setRoute('details');
         }
       } catch (e) {
@@ -174,7 +182,7 @@ function useAppStateImpl() {
       }
     })();
     return () => { cancelled = true; };
-  }, [uid, fail]);
+  }, [uid, isGuest, fail]);
 
   // ── graph + plan for the active exam ────────────────────────────────────
   const loadGraph = useCallback(async (examId: string) => {
@@ -210,12 +218,7 @@ function useAppStateImpl() {
   const otpOk = otpDigits.length === OTP_LENGTH;
   const detailsOk = name.trim().length > 1 && grade !== null && board !== null;
 
-  const signedInUser = uid ? auth().currentUser : null;
-  const account = {
-    isGuest: signedInUser?.isAnonymous ?? true,
-    phoneNumber: signedInUser?.phoneNumber ?? null,
-    email: signedInUser?.email ?? null,
-  };
+  const account = { isGuest, phoneNumber: signedInAs.phone, email: signedInAs.email };
 
   const activeExam = exams.find((e) => e.id === activeExamId) ?? null;
   const readyExams = exams.filter((e) => e.graphStatus === 'ready');
