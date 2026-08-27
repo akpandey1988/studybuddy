@@ -58,25 +58,8 @@ export const radius = {
 } as const;
 
 export const shadow = {
-  sm: {
-    shadowColor: '#2e2b25',
-    shadowOpacity: 0.14,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
-  md: {
-    shadowColor: '#2e2b25',
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
-  },
-  lg: {
-    shadowColor: '#2e2b25',
-    shadowOpacity: 0.22,
-    shadowRadius: 32,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 8,
-  },
+  // RN 0.86 (New Architecture): boxShadow replaces the deprecated shadow*/elevation props.
+  sm: { boxShadow: '0px 1px 2px rgba(46, 43, 37, 0.14)' },
+  md: { boxShadow: '0px 3px 10px rgba(46, 43, 37, 0.16)' },
+  lg: { boxShadow: '0px 12px 32px rgba(46, 43, 37, 0.22)' },
 } as const;
