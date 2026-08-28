@@ -173,7 +173,7 @@ export const getGraph = onCall(callable, async (req) => {
   const { examId } = req.data ?? {};
   if (!examId) throw new HttpsError('invalid-argument', 'examId is required.');
   const [exam, nodes] = await Promise.all([getExam(uid, examId), getNodes(uid, examId)]);
-  return { exam, nodes };
+  return { exam, nodes: nodes.map(({ asked, ...node }) => node) };
 });
 
 /** The precise next thing to do, and why. Pure logic — no Claude call. */
@@ -214,9 +214,13 @@ export const startCheck = onCall(
       throw new HttpsError('internal', (err as Error).message);
     }
 
+    // Remember what was asked as soon as it is asked. Recording on submit
+    // instead would let an abandoned check hand back the same questions.
+    const asked = [...(node.asked ?? []), ...questions.map((q) => q.q)].slice(-40);
     const ref = await pendingRef(uid, examId).add({
       conceptId, questions, createdAt: Date.now(),
     });
+    await updateProgress(uid, examId, conceptId, { asked });
 
     return {
       checkId: ref.id,

@@ -36,6 +36,12 @@ export type ConceptProgress = {
   dueAt: number | null;
   /** Questions missed last time — fed back into the next lesson. */
   missed: string[];
+  /**
+   * Every question already put to this student on this concept, newest last.
+   * Recorded when a check is generated, not when it is submitted, so an
+   * abandoned check still counts and cannot come back verbatim.
+   */
+  asked: string[];
 };
 
 /** A graph node joined with the student's progress on it. */
@@ -92,4 +98,5 @@ export const emptyProgress = (): ConceptProgress => ({
   lastSeenAt: null,
   dueAt: null,
   missed: [],
+  asked: [],
 });

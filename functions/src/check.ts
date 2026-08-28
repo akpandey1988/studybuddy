@@ -22,14 +22,15 @@ const CheckSchema = z.object({ questions: z.array(QuestionSchema) });
 
 export type PracticeQuestion = z.infer<typeof QuestionSchema>;
 
-export async function generateQuestions(
-  node: ConceptNode,
-  subject: string,
-  grade: number | null,
-  board: string | null,
-  count = CHECK_SIZE,
-): Promise<PracticeQuestion[]> {
+/** Keep the no-repeat list bounded; the oldest questions matter least. */
+const REMEMBER_ASKED = 40;
+
+
+function promptFor(
+  node: ConceptNode, subject: string, grade: number | null, board: string | null, count: number,
+): string[] {
   const attempt = node.attempts + 1;
+  const asked = (node.asked ?? []).slice(-REMEMBER_ASKED);
   const prompt = [
     `Write ${count} multiple-choice questions checking whether a grade ${grade ?? 7} student on the ${board ?? 'CBSE'} board can do this, in ${subject}:`,
     '',
@@ -48,10 +49,24 @@ export async function generateQuestions(
     '- Vary difficulty: start easier, end harder.',
   ];
 
+  // The strongest guard against repeats: show the model exactly what it has
+  // already asked. Attempt count alone is not enough, because it only moves
+  // when a check is submitted — an abandoned one would regenerate the same
+  // prompt and therefore much the same questions.
+  if (asked.length) {
+    prompt.push(
+      '',
+      `You have ALREADY asked this student the following ${asked.length} question(s) on this concept.`,
+      'Do not repeat any of them, and do not merely reword them with different numbers.',
+      'Come at the concept from a genuinely different angle: a different everyday setting,',
+      'a different form of the question (compare, order, spot the error, work backwards).',
+      ...asked.map((q) => `- ${q}`),
+    );
+  }
   if (attempt > 1) {
     prompt.push(
       '',
-      `This is attempt ${attempt}; earlier attempts were not passed. Write completely fresh questions on the same concept from different angles. Do not reuse earlier numbers or phrasing.`,
+      `This is attempt ${attempt}; earlier attempts were not passed.`,
     );
   }
   if (node.missed.length) {
@@ -61,6 +76,24 @@ export async function generateQuestions(
       ...node.missed.map((m) => `- ${m}`),
     );
   }
+
+  return prompt;
+}
+
+export function buildCheckPrompt(
+  node: ConceptNode, subject: string, grade: number | null, board: string | null, count = CHECK_SIZE,
+): string {
+  return promptFor(node, subject, grade, board, count).join('\n');
+}
+
+export async function generateQuestions(
+  node: ConceptNode,
+  subject: string,
+  grade: number | null,
+  board: string | null,
+  count = CHECK_SIZE,
+): Promise<PracticeQuestion[]> {
+  const prompt = promptFor(node, subject, grade, board, count);
 
   const response = await claude().messages.parse({
     model: MODEL,

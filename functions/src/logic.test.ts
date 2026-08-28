@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { applyAttempt, effectiveStrength, nextDueAt } from './mastery.js';
 import { buildContent, computeDepth, normaliseGraph } from './graph.js';
+import { buildCheckPrompt } from './check.js';
 import { planNextStep } from './plan.js';
 import { emptyProgress } from './types.js';
 import type { ConceptNode } from './types.js';
@@ -110,6 +111,47 @@ test('an unsupported image media type falls back rather than erroring the API', 
   // Claude rejects unknown image types outright; a phone that reports HEIC
   // should still get a usable request.
   assert.equal(content[0].source?.media_type, 'image/jpeg');
+});
+
+// ── check questions must not repeat ────────────────────────────────────────
+
+const concept = (over: Partial<ConceptNode> = {}): ConceptNode => ({
+  id: 'frac', name: 'Equivalent fractions', chapter: 'Fractions',
+  summary: 'Recognise equivalent fractions', prereqs: [],
+  weight: 0.3, difficulty: 3, depth: 0, ...emptyProgress(), ...over,
+});
+
+test('a first check does not mention previous questions', () => {
+  const p = buildCheckPrompt(concept(), 'Maths', 7, 'CBSE');
+  assert.ok(!/ALREADY asked/.test(p), 'nothing has been asked yet');
+});
+
+test('previously asked questions are listed and forbidden', () => {
+  const p = buildCheckPrompt(
+    concept({ asked: ['Which is larger: 3/5 or 5/8?', 'Simplify 36/48.'] }),
+    'Maths', 7, 'CBSE',
+  );
+  assert.match(p, /ALREADY asked/);
+  assert.match(p, /Which is larger: 3\/5 or 5\/8\?/);
+  assert.match(p, /Simplify 36\/48\./);
+  assert.match(p, /Do not repeat any of them/);
+});
+
+test('the no-repeat list is bounded so the prompt cannot grow forever', () => {
+  const many = Array.from({ length: 120 }, (_, i) => `Question number ${i}?`);
+  const p = buildCheckPrompt(concept({ asked: many }), 'Maths', 7, 'CBSE');
+  assert.ok(!p.includes('Question number 0?'), 'oldest questions drop out');
+  assert.ok(p.includes('Question number 119?'), 'newest are kept');
+});
+
+test('an abandoned check still changes the next prompt', () => {
+  // attempts only moves on submit, so this is the case that used to regenerate
+  // a byte-identical prompt and hand back the same questions.
+  const before = buildCheckPrompt(concept({ attempts: 0 }), 'Maths', 7, 'CBSE');
+  const after = buildCheckPrompt(
+    concept({ attempts: 0, asked: ['Which is larger: 3/5 or 5/8?'] }), 'Maths', 7, 'CBSE',
+  );
+  assert.notEqual(before, after, 'asking a question must change the next prompt');
 });
 
 // ── planner ────────────────────────────────────────────────────────────────
