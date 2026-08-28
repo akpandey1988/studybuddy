@@ -25,6 +25,25 @@ adb install <the-apk-it-gives-you>
 npx expo start --dev-client --lan
 ```
 
+## Scan & learn, and talking to Nexora
+
+A student can photograph a question, a textbook page or their own working.
+`identifyScan` matches it against **their own** concept graph rather than
+teaching the picture in isolation — so the lesson that follows knows their
+mastery of that concept, what it depends on and what it unlocks. A returned
+id is checked against the graph before being trusted, and a photo that
+genuinely is not on their syllabus says so instead of guessing.
+
+The lesson is a conversation, by typing or by voice. Both halves of voice run
+on the device — Android's `SpeechRecognizer` / iOS's `SFSpeechRecognizer` for
+listening, the platform voices for speaking — so a conversation costs nothing
+per turn and no audio leaves the phone.
+
+Voice changes what Nexora says, not just how it is delivered: replies are
+capped near 40 words, written to be heard rather than read, with sums spoken
+in words and no symbols or lists. Tapping the mic while it is talking stops
+it, because that is a student wanting to answer.
+
 ## Sign-in
 
 A student gets an anonymous uid the moment they open the app, so they can

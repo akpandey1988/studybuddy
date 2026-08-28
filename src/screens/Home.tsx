@@ -2,7 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TabBar } from '../components/TabBar';
-import { LeafIcon } from '../components/Icons';
+import { CameraIcon, LeafIcon } from '../components/Icons';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
@@ -127,6 +127,15 @@ export function HomeScreen() {
                 </Pressable>
               </View>
 
+              {/* Not everything a student needs is the next thing in the plan. */}
+              <Pressable onPress={actions.goScan} style={styles.scanRow}>
+                <View style={styles.scanIcon}><CameraIcon size={20} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.scanTitle}>Stuck on something else?</Text>
+                  <Text style={styles.scanHint}>Scan a question or page and talk it through</Text>
+                </View>
+              </Pressable>
+
               {plan.dueForReview.length > 0 && (
                 <View style={styles.reviewCard}>
                   <Text style={styles.reviewTitle}>
@@ -224,6 +233,16 @@ const styles = StyleSheet.create({
   unlockText: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent2_800 },
   startBtn: { backgroundColor: colors.accent, borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
   startBtnLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 16, color: '#fff' },
+  scanRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 13,
+    backgroundColor: '#fff', borderRadius: radius.md, padding: 14, paddingHorizontal: 16, ...shadow.sm,
+  },
+  scanIcon: {
+    width: 38, height: 38, borderRadius: 999, backgroundColor: colors.accent100,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scanTitle: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.text },
+  scanHint: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral600 },
   reviewCard: { backgroundColor: '#fff', borderRadius: radius.md, padding: 16, gap: 4, ...shadow.sm },
   reviewTitle: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.text },
   reviewBody: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.neutral600 },

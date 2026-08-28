@@ -12,6 +12,7 @@ import { SyllabusScreen } from './screens/Syllabus';
 import { BuildingScreen } from './screens/Building';
 import { HomeScreen } from './screens/Home';
 import { NexoraChatScreen } from './screens/NexoraChat';
+import { ScanScreen } from './screens/Scan';
 import { CheckScreen } from './screens/Check';
 import { CheckResultScreen } from './screens/CheckResult';
 import { ProgressScreen } from './screens/Progress';
@@ -46,6 +47,7 @@ export function Router() {
     case 'building': return <BuildingScreen />;
     case 'home': return <HomeScreen />;
     case 'nexora': return <NexoraChatScreen />;
+    case 'scan': return <ScanScreen />;
     case 'check': return <CheckScreen />;
     case 'checkresult': return <CheckResultScreen />;
     case 'progress': return <ProgressScreen />;

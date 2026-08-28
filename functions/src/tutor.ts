@@ -23,6 +23,7 @@ const CORS = {
 function systemPrompt(
   studentName: string, grade: number | null, board: string | null,
   subject: string, node: ConceptNode, prereqs: ConceptNode[], daysToExam: number,
+  voice: boolean, scanned: boolean,
 ): string {
   const prereqLine = prereqs.length
     ? prereqs.map((p) => `${p.name} (${Math.round(p.strength * 100)}% solid)`).join(', ')
@@ -52,6 +53,26 @@ function systemPrompt(
     '- If they have missed this before, do NOT repeat your earlier explanation — come at it from a different angle.',
     '- No marks, no grades, no scolding.',
     '- Plain sentences. No markdown, no headings, no bullet lists, no bold.',
+    '',
+    'Teaching technique, in this order:',
+    '1. Anchor it in something they can picture — a shop, a train, a cricket score, sharing food. The example comes before the rule, never after.',
+    '2. Ask what they think happens, and wait. Do not answer your own question.',
+    '3. Only once they have committed to an answer, name the idea and give it its proper word.',
+    '4. Change one thing about the example and ask again, so they transfer it rather than memorise it.',
+    scanned
+      ? 'They have just photographed this. Open by saying what you can see in their picture, in their words, then teach from it — refer to the actual numbers and wording in the image rather than inventing your own.'
+      : '',
+    voice
+      ? [
+        '',
+        'They are TALKING to you, and your reply is read aloud:',
+        '- Under 40 words. Two or three short sentences at most.',
+        '- Write what a person would say, not what they would write. No symbols, no bullet points, no numbered lists.',
+        '- Say fractions and sums in words: "three fifths", "twelve divided by four".',
+        '- Never say "as you can see" or refer to anything visual.',
+        '- End with your question, so they know it is their turn.',
+      ].join('\n')
+      : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -70,7 +91,8 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const { examId, conceptId, message, hidden } = req.body ?? {};
+  const { examId, conceptId, message, hidden, image, mode } = req.body ?? {};
+  const voice = mode === 'voice';
   if (!examId || !conceptId) {
     res.status(400).json({ error: 'examId and conceptId are required' });
     return;
@@ -132,7 +154,7 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
   try {
     const stream = claude().beta.messages.stream({
       model: MODEL,
-      max_tokens: 2000,
+      max_tokens: voice ? 400 : 2000,
       betas: ['server-side-fallback-2026-06-01'],
       fallbacks: [{ model: 'claude-opus-4-8' }],
       thinking: { type: 'adaptive' },
@@ -142,11 +164,23 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
         type: 'text',
         text: systemPrompt(
           student.name ?? '', student.grade ?? null, student.board ?? null,
-          exam?.subject ?? '', node, prereqs, daysToExam,
+          exam?.subject ?? '', node, prereqs, daysToExam, voice, Boolean(image),
         ),
         cache_control: { type: 'ephemeral' },
       }],
-      messages: turns.map((t) => ({ role: t.role, content: t.content })),
+      messages: turns.map((t, i) => {
+        const last = i === turns.length - 1;
+        if (!last || !image?.data) return { role: t.role, content: t.content };
+        const mediaType = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+          .includes(image.mediaType) ? image.mediaType : 'image/jpeg';
+        return {
+          role: t.role,
+          content: [
+            { type: 'image' as const, source: { type: 'base64' as const, media_type: mediaType, data: image.data } },
+            { type: 'text' as const, text: t.content },
+          ],
+        };
+      }),
     });
 
     for await (const event of stream) {

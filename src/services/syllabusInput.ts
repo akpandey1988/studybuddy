@@ -59,7 +59,7 @@ function fromImageAsset(asset: ImagePicker.ImagePickerAsset): Attachment {
   };
 }
 
-/** Photograph the syllabus sheet. */
+/** Photograph something — a syllabus sheet, a textbook page, a question. */
 export async function captureSyllabusPhoto(): Promise<Attachment | null> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {

@@ -120,6 +120,20 @@ export const getThread = (examId: string, conceptId: string) =>
     'getThread', { examId, conceptId },
   );
 
+export type ScanMatch = {
+  conceptId: string | null;
+  conceptName: string;
+  whatItShows: string;
+  confidence: 'high' | 'medium' | 'low';
+  offSyllabus: boolean;
+};
+
+/** Match a photographed page or question to a concept in this student's graph. */
+export const identifyScan = (examId: string, image: { mediaType: string; data: string }) =>
+  call<{ examId: string; image: { mediaType: string; data: string } }, ScanMatch>(
+    'identifyScan', { examId, image },
+  );
+
 export const resetThread = (examId: string, conceptId: string) =>
   call<{ examId: string; conceptId: string }, { ok: boolean }>('resetThread', { examId, conceptId });
 
@@ -138,13 +152,21 @@ function tutorUrl(): string {
  * React Native's built-in fetch cannot read a response body incrementally,
  * and neither can the callable SDK.
  */
+export type TutorOptions = {
+  /** Send the message to Claude but keep it out of the visible thread. */
+  hidden?: boolean;
+  /** Voice replies are shorter and written to be heard rather than read. */
+  mode?: 'text' | 'voice';
+  /** A photograph the student wants explained, sent with this turn. */
+  image?: { mediaType: string; data: string };
+};
+
 export async function* streamTutor(
   examId: string,
   conceptId: string,
   message?: string,
   signal?: AbortSignal,
-  /** Send the message to Claude but keep it out of the visible thread. */
-  hidden = false,
+  options: TutorOptions = {},
 ): AsyncGenerator<string> {
   if (!isConfigured()) {
     throw new BackendError('The backend is not configured. See README.md.');
@@ -157,7 +179,12 @@ export async function* streamTutor(
       method: 'POST',
       signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ examId, conceptId, message, hidden }),
+      body: JSON.stringify({
+        examId, conceptId, message,
+        hidden: options.hidden ?? false,
+        mode: options.mode ?? 'text',
+        image: options.image,
+      }),
     });
   } catch {
     throw new BackendError("Nexora can't be reached. Check your connection and try again.");

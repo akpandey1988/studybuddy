@@ -2,7 +2,7 @@ export type Route =
   | 'login' | 'otp' | 'details'
   | 'exams' | 'prime' | 'addsub' | 'syllabus'
   | 'building'
-  | 'home' | 'nexora' | 'check' | 'checkresult' | 'progress' | 'badges'
+  | 'home' | 'nexora' | 'scan' | 'check' | 'checkresult' | 'progress' | 'badges'
   | 'friends' | 'fchat' | 'call' | 'group' | 'parent';
 
 export type { ConceptNode, NextStep, CheckQuestion, GradedQuestion, CheckResult } from '../services/backend';
@@ -21,6 +21,12 @@ export type CheckState = {
   picks: number[];
 };
 
+/** A photographed page or question, and what Nexora made of it. */
+export type ScanState = {
+  image: { mediaType: string; data: string; name: string } | null;
+  match: import('../services/backend').ScanMatch | null;
+};
+
 export type Busy =
   | null
   | 'auth'
@@ -30,4 +36,5 @@ export type Busy =
   | 'plan'
   | 'check'
   | 'answer'
-  | 'submit';
+  | 'submit'
+  | 'scan';

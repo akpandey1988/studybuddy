@@ -12,6 +12,7 @@ import { QuotaError, consumeQuota, refundQuota } from './quota.js';
 import { ANTHROPIC_API_KEY } from './claude.js';
 import { CHECK_PASS, CHECK_SIZE, generateQuestions, grade } from './check.js';
 import { buildConceptGraph } from './graph.js';
+import { identifyConcept } from './identify.js';
 import { applyAttempt } from './mastery.js';
 import { planNextStep } from './plan.js';
 import {
@@ -311,6 +312,39 @@ export const submitCheck = onCall(callable, async (req) => {
     next: planNextStep(nodes, now, exam.examDate),
   };
 });
+
+/**
+ * Match a photographed page or question to a concept in this student's graph,
+ * so the lesson that follows knows where it sits and what it depends on.
+ */
+export const identifyScan = onCall(
+  { ...common, timeoutSeconds: 120, maxInstances: 8 },
+  async (req) => {
+    const uid = requireUid(req.auth);
+    const { examId, image } = req.data ?? {};
+    if (!examId || !image?.data) {
+      throw new HttpsError('invalid-argument', 'examId and an image are required.');
+    }
+    if (typeof image.data !== 'string' || image.data.length > 9_000_000) {
+      throw new HttpsError('invalid-argument', 'That photo is too large.');
+    }
+
+    const [exam, nodes] = await Promise.all([getExam(uid, examId), getNodes(uid, examId)]);
+    if (!exam) throw new HttpsError('not-found', 'No such exam.');
+
+    // Scanning is a Claude call, so it comes out of the same daily budget.
+    await consumeQuota(uid, 'check').catch(quotaToHttps);
+    try {
+      return await identifyConcept(
+        nodes, exam.subject, exam.grade, exam.board,
+        { mediaType: String(image.mediaType ?? 'image/jpeg'), data: image.data },
+      );
+    } catch (err) {
+      await refundQuota(uid, 'check');
+      throw new HttpsError('internal', (err as Error).message);
+    }
+  },
+);
 
 /** The lesson so far, so reopening a concept shows the conversation. */
 export const getThread = onCall(callable, async (req) => {

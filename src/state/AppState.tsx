@@ -8,7 +8,7 @@ import {
 } from '../services/auth';
 import type { ConfirmationResult } from '@react-native-firebase/auth';
 import { loadExams, loadProfile, newExamId, saveProfile } from '../services/store';
-import type { Busy, CheckState, Route } from './types';
+import type { Busy, CheckState, Route, ScanState } from './types';
 import type { ConceptNode, NextStep } from '../services/backend';
 import type { ExamRecord } from '../services/store';
 import type { Attachment } from '../services/syllabusInput';
@@ -50,6 +50,11 @@ function useAppStateImpl() {
 
   const [check, setCheck] = useState<CheckState>(emptyCheck());
   const [result, setResult] = useState<backend.CheckResult | null>(null);
+  const [scan, setScan] = useState<ScanState>({ image: null, match: null });
+  /** Set when a lesson should open on a scanned concept rather than the plan's. */
+  const [scanTarget, setScanTarget] = useState<{
+    conceptId: string; image: ScanState['image'];
+  } | null>(null);
   /** Queued ask for the tutor after a failed check — consumed by the chat. */
   const [reteachAsk, setReteachAsk] = useState<string | null>(null);
 
@@ -75,6 +80,7 @@ function useAppStateImpl() {
     addsub: 'exams',
     syllabus: 'addsub',
     nexora: 'home',
+    scan: 'home',
     check: 'home',
     checkresult: 'home',
     progress: 'home',
@@ -423,6 +429,36 @@ function useAppStateImpl() {
       try { await backend.resetThread(activeExamId, plan.conceptId); } catch (e) { fail(e); }
     },
 
+    // ── scan & learn ──────────────────────────────────────────────────────
+
+    goScan: () => { setScan({ image: null, match: null }); setError(null); go('scan'); },
+    resetScan: () => { setScan({ image: null, match: null }); setError(null); },
+    setScanError: (message: string) => setError(message),
+
+    /** Photo in, concept out — matched against this student's own graph. */
+    identifyScan: async (shot: Attachment) => {
+      if (!activeExamId) return;
+      setScan({ image: { mediaType: shot.mediaType, data: shot.data, name: shot.name }, match: null });
+      setBusy('scan');
+      setError(null);
+      try {
+        const match = await backend.identifyScan(activeExamId, {
+          mediaType: shot.mediaType, data: shot.data,
+        });
+        setScan((prev) => ({ ...prev, match }));
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    /**
+     * Open the lesson on what was scanned. The photo rides along with the
+     * first turn so Nexora teaches from their actual page, not a guess at it.
+     */
+    learnFromScan: () => {
+      if (!scan.match?.conceptId) return;
+      setScanTarget({ conceptId: scan.match.conceptId, image: scan.image });
+      go('nexora');
+    },
+
     // ── the check ─────────────────────────────────────────────────────────
     startCheck: async () => {
       if (!activeExamId || !plan?.conceptId) return;
@@ -488,11 +524,12 @@ function useAppStateImpl() {
       go('nexora');
     },
     consumeReteachAsk: () => setReteachAsk(null),
+    consumeScanTarget: () => setScanTarget(null),
     finishCheck: () => { setCheck(emptyCheck()); setResult(null); go('home'); },
   }), [
     go, fail, uid, phone, otp, phoneOk, otpOk, detailsOk, name, grade, board, atCap, prime,
     busy, confirmation,
-    exams, draftSubject, draftSyllabus, draftFile, draftDays, activeExamId, plan, check, result,
+    exams, draftSubject, draftSyllabus, draftFile, draftDays, activeExamId, plan, check, result, scan,
     readyExams, loadGraph, refreshExams,
   ]);
 
@@ -503,7 +540,7 @@ function useAppStateImpl() {
     exams, activeExam, activeExamId, activeName, readyExams, pendingExams, atCap, needsPrime,
     nodes, plan, focusNode, readiness, masteredCount, byId,
     subjectOptions, draftSubject, draftDays, draftSyllabus, draftFile, draftPct,
-    check, checkQ, checkTotal, result, reteachAsk,
+    check, checkQ, checkTotal, result, reteachAsk, scan, scanTarget,
     actions,
   };
 }

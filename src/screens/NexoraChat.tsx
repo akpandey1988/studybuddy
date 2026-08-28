@@ -4,10 +4,11 @@ import {
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SendIcon } from '../components/Icons';
+import { MicIcon, SendIcon } from '../components/Icons';
 import { useApp } from '../state/AppState';
 import { BackendError, getThread, streamTutor } from '../services/backend';
 import type { ChatTurn } from '../services/backend';
+import { speak, stopSpeaking, useListening } from '../services/voice';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
 /**
@@ -15,7 +16,7 @@ import { colors, fonts, radius, shadow } from '../theme/tokens';
  * across devices and reloads; this screen holds only the reply being streamed.
  */
 export function NexoraChatScreen() {
-  const { activeExamId, plan, focusNode, reteachAsk, actions } = useApp();
+  const { activeExamId, plan, focusNode, reteachAsk, scanTarget, actions } = useApp();
 
   const [turns, setTurns] = React.useState<ChatTurn[]>([]);
   const [draft, setDraft] = React.useState('');
@@ -23,12 +24,18 @@ export function NexoraChatScreen() {
   const [sending, setSending] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  /** When on, replies are read aloud and the mic drives the conversation. */
+  const [voiceMode, setVoiceMode] = React.useState(false);
+  const [speaking, setSpeaking] = React.useState(false);
 
   const scroller = React.useRef<ScrollView>(null);
   const abort = React.useRef<AbortController | null>(null);
-  const conceptId = plan?.conceptId ?? null;
+  const firstTurn = React.useRef(true);
+  // A scan overrides the plan's choice: they asked about this specific thing.
+  const conceptId = scanTarget?.conceptId ?? plan?.conceptId ?? null;
+  const scanImage = scanTarget?.image ?? null;
 
-  const send = React.useCallback(async (message?: string, hidden = false) => {
+  const send = React.useCallback(async (message?: string, hidden = false, mode: 'text' | 'voice' = 'text') => {
     if (!activeExamId || !conceptId) return;
     setSending(true);
     setError(null);
@@ -39,12 +46,24 @@ export function NexoraChatScreen() {
     let reply = '';
 
     try {
-      for await (const chunk of streamTutor(activeExamId, conceptId, message, controller.signal, hidden)) {
+      for await (const chunk of streamTutor(activeExamId, conceptId, message, controller.signal, {
+        hidden, mode,
+        // Only the opening turn carries the photo; after that it is context.
+        image: firstTurn.current ? scanImage ?? undefined : undefined,
+      })) {
+        firstTurn.current = false;
         reply += chunk;
         setDraft(reply);
       }
-      if (reply.trim()) setTurns((t) => [...t, { role: 'assistant', content: reply }]);
-      else setError('Nexora went quiet. Try again.');
+      if (reply.trim()) {
+        setTurns((t) => [...t, { role: 'assistant', content: reply }]);
+        // Speak only the settled reply: speaking each streamed fragment would
+        // stutter and talk over itself.
+        if (mode === 'voice') {
+          setSpeaking(true);
+          speak(reply, () => setSpeaking(false));
+        }
+      } else setError('Nexora went quiet. Try again.');
     } catch (e) {
       if (!controller.signal.aborted) {
         setError(e instanceof BackendError ? e.message : `Something went wrong: ${(e as Error).message}`);
@@ -56,7 +75,7 @@ export function NexoraChatScreen() {
       setSending(false);
       abort.current = null;
     }
-  }, [activeExamId, conceptId]);
+  }, [activeExamId, conceptId, scanImage]);
 
   // Load what's already been said, and open the lesson if nothing has.
   const opened = React.useRef<string | null>(null);
@@ -98,6 +117,29 @@ export function NexoraChatScreen() {
   }, [reteachAsk, activeExamId, conceptId, sending, actions, send]);
 
   React.useEffect(() => () => abort.current?.abort(), []);
+  // Never leave the phone talking after the student has left the lesson.
+  React.useEffect(() => () => { stopSpeaking(); }, []);
+
+  // What the student says becomes an ordinary turn; only the reply differs.
+  const listening = useListening(React.useCallback((said: string) => {
+    setTurns((t) => [...t, { role: 'user', content: said }]);
+    send(said, false, 'voice');
+  }, [send]));
+
+  const toggleVoice = () => {
+    const next = !voiceMode;
+    setVoiceMode(next);
+    if (!next) { stopSpeaking(); setSpeaking(false); listening.stop(); }
+  };
+
+  const onMic = () => {
+    if (listening.listening) { listening.stop(); return; }
+    // Tapping the mic while Nexora is talking means "let me answer" — stop.
+    stopSpeaking();
+    setSpeaking(false);
+    if (!voiceMode) setVoiceMode(true);
+    listening.start();
+  };
 
   const onSend = () => {
     const text = input.trim();
@@ -127,11 +169,11 @@ export function NexoraChatScreen() {
             {plan ? `${plan.conceptName}${focusNode ? ` · ${focusNode.chapter}` : ''}` : 'Getting ready…'}
           </Text>
         </View>
-        {turns.length > 0 && (
-          <Pressable onPress={restart} hitSlop={8} style={styles.timer}>
-            <Text style={styles.timerText}>Restart</Text>
-          </Pressable>
-        )}
+        <Pressable onPress={toggleVoice} hitSlop={8} style={[styles.voiceToggle, voiceMode && styles.voiceToggleOn]}>
+          <Text style={[styles.voiceToggleText, voiceMode && styles.voiceToggleTextOn]}>
+            {voiceMode ? 'Voice on' : 'Voice'}
+          </Text>
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView
@@ -170,7 +212,30 @@ export function NexoraChatScreen() {
           )}
         </ScrollView>
 
-        {readyToCheck && (
+        {/* What the mic is hearing, before it settles into a message. */}
+        {listening.listening && (
+          <View style={styles.listenBar}>
+            <View style={styles.listenDot} />
+            <Text style={styles.listenText} numberOfLines={2}>
+              {listening.partial || 'Listening…'}
+            </Text>
+            <Pressable onPress={listening.stop} hitSlop={8}>
+              <Text style={styles.listenStop}>Stop</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {speaking && !listening.listening && (
+          <Pressable onPress={() => { stopSpeaking(); setSpeaking(false); }} style={styles.speakBar}>
+            <Text style={styles.speakText}>Nexora is speaking — tap to stop</Text>
+          </Pressable>
+        )}
+
+        {listening.error && (
+          <Text style={styles.listenError}>{listening.error}</Text>
+        )}
+
+        {readyToCheck && !listening.listening && (
           <Pressable onPress={actions.startCheck} style={styles.checkBar}>
             <Text style={styles.checkBarLabel}>
               {focusNode && focusNode.attempts > 0 ? 'Try the check again' : "I've got it — check me"}
@@ -195,6 +260,15 @@ export function NexoraChatScreen() {
             returnKeyType="send"
             blurOnSubmit={false}
           />
+          {/* Talking is the point of voice mode, so the mic is always here —
+              typing stays available for anyone who would rather not speak. */}
+          <Pressable
+            onPress={onMic}
+            disabled={sending}
+            style={[styles.micBtn, listening.listening && styles.micBtnOn, sending && styles.sendBtnOff]}
+          >
+            <MicIcon size={22} color={listening.listening ? '#fff' : colors.accent800} />
+          </Pressable>
           <Pressable
             onPress={onSend}
             disabled={!input.trim() || sending}
@@ -253,6 +327,36 @@ const styles = StyleSheet.create({
   },
   checkBarLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 15, color: '#fff' },
   checkBarMeta: { fontFamily: fonts.body, fontSize: 12, color: colors.accent2_100 },
+  voiceToggle: {
+    borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12,
+    backgroundColor: '#fff', borderWidth: 2, borderColor: colors.accent2_300,
+  },
+  voiceToggleOn: { backgroundColor: colors.accent2_500, borderColor: colors.accent2_500 },
+  voiceToggleText: { fontFamily: fonts.bodyExtraBold, fontSize: 12, fontWeight: '800', color: colors.accent2_800 },
+  voiceToggleTextOn: { color: '#fff' },
+  listenBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 20, marginBottom: 6, padding: 12,
+    backgroundColor: colors.accent2_100, borderRadius: radius.md,
+  },
+  listenDot: { width: 10, height: 10, borderRadius: 999, backgroundColor: colors.accent },
+  listenText: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: colors.accent2_900 },
+  listenStop: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent700 },
+  speakBar: {
+    marginHorizontal: 20, marginBottom: 6, padding: 11,
+    backgroundColor: colors.accent100, borderRadius: radius.md, alignItems: 'center',
+  },
+  speakText: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 13, color: colors.accent800 },
+  listenError: {
+    marginHorizontal: 20, marginBottom: 6,
+    fontFamily: fonts.body, fontSize: 13, color: colors.accent800, textAlign: 'center',
+  },
+  micBtn: {
+    width: 46, height: 46, borderRadius: 999, backgroundColor: colors.accent100,
+    borderWidth: 2, borderColor: colors.accent300,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  micBtnOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   inputBar: {
     padding: 12, paddingHorizontal: 20, backgroundColor: '#fff', borderTopWidth: 2, borderTopColor: colors.neutral200,
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,

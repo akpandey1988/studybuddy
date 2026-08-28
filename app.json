@@ -36,7 +36,14 @@
       ],
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "StudyBuddy uses the microphone so you can talk to Nexora instead of typing.",
+          "speechRecognitionPermission": "StudyBuddy turns what you say into text so Nexora can answer your questions."
+        }
+      ]
     ],
     "scheme": "studybuddy",
     "extra": {
