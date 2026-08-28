@@ -57,6 +57,12 @@ export function LoginScreen() {
           <Text style={styles.googleLabel}>Continue with Google</Text>
         </Pressable>
 
+        {/* The app hands out an anonymous uid on first run, so this has to be
+            reachable — otherwise "guest" is a promise the UI never keeps. */}
+        <Pressable onPress={actions.continueAsGuest} disabled={working}>
+          <Text style={styles.guest}>Have a look around first</Text>
+        </Pressable>
+
         <Text style={styles.footer}>By continuing you agree to study for 25 minutes a day. Mostly.</Text>
       </View>
     </Screen>
@@ -99,5 +105,9 @@ const styles = StyleSheet.create({
   },
   googleBusy: { opacity: 0.6 },
   googleLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 16, color: colors.neutral800 },
+  guest: {
+    fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15,
+    color: colors.neutral700, textAlign: 'center', paddingVertical: 6,
+  },
   footer: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, textAlign: 'center', color: colors.neutral600 },
 });

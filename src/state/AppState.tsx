@@ -110,11 +110,16 @@ function useAppStateImpl() {
     if (!isConfigured()) { setAuthReady(true); return; }
     const stop = watchAuth(async (user) => {
       if (user) {
+        // Mark boot resolved here too, or signing out later looks like a
+        // first run and silently mints a fresh guest instead of showing login.
+        booted.current = true;
         setUid(user.uid);
         setIsGuest(user.isAnonymous);
         setSignedInAs({ phone: user.phoneNumber, email: user.email });
         setAuthReady(true);
       } else if (!booted.current) {
+        // Genuine first run: hand them a uid so the app is usable before
+        // they decide whether to sign up.
         booted.current = true;
         setBusy('auth');
         try { await signInGuest(); } catch (e) { fail(e); setAuthReady(true); }
@@ -305,6 +310,19 @@ function useAppStateImpl() {
     },
 
     dismissGuestWarning: () => setGuestProgressLost(false),
+
+    /**
+     * Carry on without an account. A guest already exists on first run, but
+     * after a sign-out there is none, so make one on demand.
+     */
+    continueAsGuest: async () => {
+      setBusy('auth');
+      setError(null);
+      try {
+        if (!uid) await signInGuest();
+        go('details');
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
 
     signOut: async () => {
       setBusy('auth');

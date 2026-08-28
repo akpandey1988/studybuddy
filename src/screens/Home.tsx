@@ -81,7 +81,7 @@ export function HomeScreen() {
                 {masteredCount} of {nodes.length} concepts learned
               </Text>
               <Text style={[styles.readinessFooterText, styles.footerRight]} numberOfLines={1}>
-                Weighted by exam marks
+                by exam marks
               </Text>
             </View>
           </View>
@@ -193,7 +193,8 @@ const styles = StyleSheet.create({
   // Both labels grew with real data; without shrinking they overflow and run
   // into each other.
   readinessFooter: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  footerLeft: { flexShrink: 1 },
+  // The count is the useful half, so it keeps its width; the caption yields.
+  footerLeft: { flexShrink: 0 },
   footerRight: { flexShrink: 1, textAlign: 'right' },
   readinessFooterText: { fontFamily: fonts.body, fontSize: 13, color: colors.neutral700 },
   todayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
