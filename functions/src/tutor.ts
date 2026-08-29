@@ -201,6 +201,9 @@ export async function handleTutor(req: Request, res: Response): Promise<void> {
   } catch (err) {
     // Nothing was said, so don't charge them for the turn.
     if (!reply.trim()) await refundQuota(uid, 'tutor');
+    // Log it too. This is streamed to the client, so without this line a
+    // failing tutor leaves no trace server-side and looks healthy in the logs.
+    console.error('tutor failed', { conceptId, message: (err as Error).message });
     send({ type: 'error', error: friendlyError(err) });
   } finally {
     res.end();
