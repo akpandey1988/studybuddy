@@ -244,6 +244,13 @@ function useAppStateImpl() {
   const draftPct = Math.round(((draftDays - 3) / (60 - 3)) * 100);
 
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  /**
+   * What the student is actually working on. A scan overrides the plan's
+   * choice — they asked about that specific thing — and everything downstream
+   * (the lesson, its labels, the check) must follow the same concept.
+   */
+  const activeConceptId = scanTarget?.conceptId ?? plan?.conceptId ?? null;
+  const activeConcept = activeConceptId ? byId.get(activeConceptId) ?? null : null;
   const focusNode = plan?.conceptId ? byId.get(plan.conceptId) ?? null : null;
   const readiness = plan ? Math.round(plan.readiness * 100) : 0;
   const masteredCount = nodes.filter((n) => n.state === 'mastered').length;
@@ -267,7 +274,7 @@ function useAppStateImpl() {
     goLogin: () => go('login'),
     goExams: () => go('exams'),
     goPrime: () => go('prime'),
-    goHome: () => go('home'),
+    goHome: () => { setScanTarget(null); go('home'); },
     goProgress: () => go('progress'),
     goBadges: () => go('badges'),
     goFriends: () => go('friends'),
@@ -461,14 +468,20 @@ function useAppStateImpl() {
 
     // ── the check ─────────────────────────────────────────────────────────
     startCheck: async () => {
-      if (!activeExamId || !plan?.conceptId) return;
+      // Not plan.conceptId: after a scanned lesson that would check a
+      // different concept from the one just taught.
+      if (!activeExamId || !activeConceptId) return;
       setBusy('check');
       setError(null);
       setResult(null);
-      setCheck({ ...emptyCheck(), conceptId: plan.conceptId, conceptName: plan.conceptName });
+      setCheck({
+        ...emptyCheck(),
+        conceptId: activeConceptId,
+        conceptName: activeConcept?.name ?? plan?.conceptName ?? '',
+      });
       go('check');
       try {
-        const started = await backend.startCheck(activeExamId, plan.conceptId);
+        const started = await backend.startCheck(activeExamId, activeConceptId);
         setCheck((c) => ({ ...c, checkId: started.checkId, questions: started.questions }));
       } catch (e) { fail(e); } finally { setBusy(null); }
     },
@@ -525,11 +538,12 @@ function useAppStateImpl() {
     },
     consumeReteachAsk: () => setReteachAsk(null),
     consumeScanTarget: () => setScanTarget(null),
-    finishCheck: () => { setCheck(emptyCheck()); setResult(null); go('home'); },
+    finishCheck: () => { setCheck(emptyCheck()); setResult(null); setScanTarget(null); go('home'); },
   }), [
     go, fail, uid, phone, otp, phoneOk, otpOk, detailsOk, name, grade, board, atCap, prime,
     busy, confirmation,
     exams, draftSubject, draftSyllabus, draftFile, draftDays, activeExamId, plan, check, result, scan,
+    activeConceptId, activeConcept,
     readyExams, loadGraph, refreshExams,
   ]);
 
@@ -538,7 +552,7 @@ function useAppStateImpl() {
     phone, otp, name, grade, board, prime,
     digits, otpDigits, phoneOk, otpOk, detailsOk, firstName,
     exams, activeExam, activeExamId, activeName, readyExams, pendingExams, atCap, needsPrime,
-    nodes, plan, focusNode, readiness, masteredCount, byId,
+    nodes, plan, focusNode, readiness, masteredCount, byId, activeConcept, activeConceptId,
     subjectOptions, draftSubject, draftDays, draftSyllabus, draftFile, draftPct,
     check, checkQ, checkTotal, result, reteachAsk, scan, scanTarget,
     actions,

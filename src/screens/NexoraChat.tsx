@@ -16,7 +16,7 @@ import { colors, fonts, radius, shadow } from '../theme/tokens';
  * across devices and reloads; this screen holds only the reply being streamed.
  */
 export function NexoraChatScreen() {
-  const { activeExamId, plan, focusNode, reteachAsk, scanTarget, actions } = useApp();
+  const { activeExamId, plan, reteachAsk, scanTarget, activeConcept, activeConceptId, actions } = useApp();
 
   const [turns, setTurns] = React.useState<ChatTurn[]>([]);
   const [draft, setDraft] = React.useState('');
@@ -31,9 +31,10 @@ export function NexoraChatScreen() {
   const scroller = React.useRef<ScrollView>(null);
   const abort = React.useRef<AbortController | null>(null);
   const firstTurn = React.useRef(true);
-  // A scan overrides the plan's choice: they asked about this specific thing.
-  const conceptId = scanTarget?.conceptId ?? plan?.conceptId ?? null;
+  // Resolved centrally: a scan overrides the plan's choice.
+  const conceptId = activeConceptId;
   const scanImage = scanTarget?.image ?? null;
+  const scanned = Boolean(scanTarget);
 
   const send = React.useCallback(async (message?: string, hidden = false, mode: 'text' | 'voice' = 'text') => {
     if (!activeExamId || !conceptId) return;
@@ -166,7 +167,9 @@ export function NexoraChatScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Nexora</Text>
           <Text style={styles.subtitle} numberOfLines={1}>
-            {plan ? `${plan.conceptName}${focusNode ? ` · ${focusNode.chapter}` : ''}` : 'Getting ready…'}
+            {activeConcept
+              ? `${activeConcept.name} · ${activeConcept.chapter}`
+              : plan?.conceptName ?? 'Getting ready…'}
           </Text>
         </View>
         <Pressable onPress={toggleVoice} hitSlop={8} style={[styles.voiceToggle, voiceMode && styles.voiceToggleOn]}>
@@ -187,7 +190,7 @@ export function NexoraChatScreen() {
           keyboardDismissMode="on-drag"
         >
           {/* Why this concept, carried over from the plan. */}
-          {plan?.reason && turns.length > 0 && (
+          {plan?.reason && !scanned && turns.length > 0 && (
             <View style={styles.whyCard}><Text style={styles.whyText}>{plan.reason}</Text></View>
           )}
 
@@ -238,12 +241,12 @@ export function NexoraChatScreen() {
         {readyToCheck && !listening.listening && (
           <Pressable onPress={actions.startCheck} style={styles.checkBar}>
             <Text style={styles.checkBarLabel}>
-              {focusNode && focusNode.attempts > 0 ? 'Try the check again' : "I've got it — check me"}
+              {activeConcept && activeConcept.attempts > 0 ? 'Try the check again' : "I've got it — check me"}
             </Text>
             <Text style={styles.checkBarMeta}>
-              {focusNode && focusNode.attempts > 0
-                ? `Attempt ${focusNode.attempts + 1} · fresh questions`
-                : `Questions on ${plan?.conceptName ?? 'this'}`}
+              {activeConcept && activeConcept.attempts > 0
+                ? `Attempt ${activeConcept.attempts + 1} · fresh questions`
+                : `Questions on ${activeConcept?.name ?? 'this'}`}
             </Text>
           </Pressable>
         )}

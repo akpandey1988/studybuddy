@@ -36,6 +36,25 @@ const tooBig = (bytes: number) =>
     + 'Try a photo of just the syllabus pages, or type the chapter names instead.',
   );
 
+/**
+ * What the bytes actually are, from their magic number.
+ *
+ * The picker re-encodes to JPEG when it applies quality or cropping, but keeps
+ * reporting the original file's mime type — so a PNG picked from the gallery
+ * arrives as JPEG bytes labelled image/png, and Claude rejects the mismatch.
+ * Trust the bytes.
+ */
+export function sniffImageType(base64: string, reported?: string): string {
+  const head = base64.slice(0, 16);
+  if (head.startsWith('/9j/')) return 'image/jpeg';
+  if (head.startsWith('iVBORw0KGgo')) return 'image/png';
+  if (head.startsWith('R0lGOD')) return 'image/gif';
+  if (head.startsWith('UklGR')) return 'image/webp';
+  // Unrecognised: fall back to what we were told, then to jpeg, since Claude
+  // accepts only a fixed set and jpeg is the likeliest camera output.
+  return reported && reported.startsWith('image/') ? reported : 'image/jpeg';
+}
+
 /** Rough decoded size of a base64 string, without allocating a buffer. */
 function base64Bytes(b64: string): number {
   const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
@@ -46,10 +65,7 @@ function fromImageAsset(asset: ImagePicker.ImagePickerAsset): Attachment {
   if (!asset.base64) throw new SyllabusInputError("Couldn't read that image. Try again.");
   const bytes = base64Bytes(asset.base64);
   if (bytes > MAX_BYTES) throw tooBig(bytes);
-  // Claude needs a real image media type; the picker reports the file name.
-  const mediaType = asset.mimeType && asset.mimeType.startsWith('image/')
-    ? asset.mimeType
-    : 'image/jpeg';
+  const mediaType = sniffImageType(asset.base64, asset.mimeType ?? undefined);
   return {
     kind: 'image',
     data: asset.base64,
@@ -125,7 +141,7 @@ export async function pickSyllabusFile(): Promise<Attachment | null> {
   return {
     kind: isPdf ? 'pdf' : 'image',
     data,
-    mediaType: isPdf ? 'application/pdf' : (asset.mimeType || 'image/jpeg'),
+    mediaType: isPdf ? 'application/pdf' : sniffImageType(data, asset.mimeType ?? undefined),
     name: asset.name || (isPdf ? 'syllabus.pdf' : 'syllabus image'),
     bytes,
   };
