@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// A student's graph is theirs alone. Everything hangs off students/{uid},
+// so one ownership check at the top covers the whole subtree.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /students/{uid} {
+      allow read: if isOwner(uid);
+      // Profile fields are the only thing the client writes directly.
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['name', 'grade', 'board', 'createdAt', 'updatedAt']);
+      allow delete: if false;
+
+      // Spend counters. Readable so the app can show what's left; only the
+      // functions' admin SDK may write them, or a student could reset their
+      // own limits.
+      match /usage/{day} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
+      match /exams/{examId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid);
+        allow delete: if isOwner(uid);
+
+        // Mastery is derived from graded attempts. If the client could write
+        // it, a student could simply declare themselves mastered — so these
+        // are read-only here and only Cloud Functions (admin SDK) may write.
+        match /concepts/{conceptId} {
+          allow read: if isOwner(uid);
+          allow write: if false;
+        }
+        match /attempts/{attemptId} {
+          allow read: if isOwner(uid);
+          allow write: if false;
+        }
+        match /threads/{conceptId} {
+          allow read: if isOwner(uid);
+          allow write: if false;
+        }
+        // Holds the answer key for a check in flight. No client access at all,
+        // or a student could read the answers before submitting.
+        match /pendingChecks/{checkId} {
+          allow read, write: if false;
+        }
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

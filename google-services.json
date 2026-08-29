@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "737362154472",
+    "project_id": "studybuddy-nexora",
+    "storage_bucket": "studybuddy-nexora.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:737362154472:android:d863c77e7596a2bf264a5d",
+        "android_client_info": {
+          "package_name": "com.nexora.studybuddy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "737362154472-k30q5d1ecdn90v3978piu1ghavbvmcn3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nexora.studybuddy",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "737362154472-m5ulieu3veihtfljl611iureuqvdpho6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nexora.studybuddy",
+            "certificate_hash": "73727210dcf2e99d449928a0fd453400f2e8c21c"
+          }
+        },
+        {
+          "client_id": "737362154472-mhuvrphdgdi1e3hkfmc1kep3btoma57i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1cbPz8Kxoelu56A57g6MqtkG9ZMWDbRg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "737362154472-mhuvrphdgdi1e3hkfmc1kep3btoma57i.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

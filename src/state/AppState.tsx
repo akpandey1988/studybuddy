@@ -1,96 +1,273 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, catFor, dateLabel } from '../data/catalog';
-import type { AppData, Exam, ExamStats, Route, TopicLevel } from './types';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler } from 'react-native';
+import { CATALOG, DAY_CHOICES, FREE_EXAMS, MAX_EXAMS, dateLabel } from '../data/catalog';
+import * as backend from '../services/backend';
+import { BackendError, auth, isConfigured, signInGuest, watchAuth } from '../services/firebase';
+import {
+  AuthError, confirmPhoneCode, signInWithGoogle, signOutEverywhere, startPhoneSignIn,
+} from '../services/auth';
+import type { ConfirmationResult } from '@react-native-firebase/auth';
+import { loadExams, loadProfile, newExamId, saveProfile } from '../services/store';
+import type { Busy, CheckState, Route, ScanState } from './types';
+import type { ConceptNode, NextStep } from '../services/backend';
+import type { ExamRecord } from '../services/store';
+import type { Attachment } from '../services/syllabusInput';
 
-// Ported 1:1 from the Component class in StudyBuddy Prototype.dc.html.
+const DAY_MS = 86_400_000;
+/** Firebase sends a 6-digit SMS code; the old stub assumed 4. */
+export const OTP_LENGTH = 6;
 
-function examStats(exam: Exam): ExamStats {
-  const c = catFor(exam.subject);
-  const picks = exam.picks || [];
-  const byTopic: Record<string, { right: number; total: number }> = {};
-  c.topics.forEach((t) => { byTopic[t] = { right: 0, total: 0 }; });
-  c.qs.forEach((q, i) => {
-    const e = byTopic[q.topic];
-    e.total += 1;
-    if (picks[i] === q.answer) e.right += 1;
-  });
-  const correct = c.qs.reduce((n, q, i) => n + (picks[i] === q.answer ? 1 : 0), 0);
-  const readiness = exam.baselineDone ? Math.round(28 + (correct / c.qs.length) * 46) : 0;
-
-  const topics = c.topics.map((name) => {
-    const e = byTopic[name];
-    const level = (!exam.baselineDone || e.total === 0) ? 0 : Math.max(1, Math.round((e.right / e.total) * 5));
-    const label: TopicLevel = level === 0 ? 'Not tested' : level >= 4 ? 'Strong' : level === 3 ? 'Getting there' : 'Needs work';
-    return { name, level, label };
-  });
-
-  const weak = topics.filter((t) => t.label === 'Needs work').map((t) => t.name);
-  const mid = topics.filter((t) => t.label === 'Getting there').map((t) => t.name);
-  const untested = topics.filter((t) => t.label === 'Not tested').map((t) => t.name);
-
-  return {
-    cat: c, correct, readiness, topics, weak, mid, untested,
-    focus: weak[0] || mid[0] || untested[0] || c.topics[0],
-    allStrong: weak.length === 0 && mid.length === 0 && exam.baselineDone,
-  };
-}
-
-const initialState: AppData = {
-  route: 'login', phone: '', otp: '', name: '', grade: null, board: null, prime: false,
-  exams: [], activeId: null, qi: 0, sel: null,
-  draftSubject: null, draftDays: 30, nextId: 1,
-};
+const emptyCheck = (): CheckState => ({
+  conceptId: null, conceptName: '', checkId: null,
+  questions: [], qi: 0, sel: null, revealed: null, picks: [],
+});
 
 function useAppStateImpl() {
-  const [s, setS] = useState<AppData>(initialState);
+  const [route, setRoute] = useState<Route>('login');
+  const [uid, setUid] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  /** Tracked from the auth listener; reading currentUser can race with it. */
+  const [isGuest, setIsGuest] = useState(true);
+  const [signedInAs, setSignedInAs] = useState<{ phone: string | null; email: string | null }>({ phone: null, email: null });
 
-  const go = useCallback((route: Route) => setS((p) => ({ ...p, route })), []);
+  // Profile. Kept in local state while being typed, persisted on Continue.
+  const [phone, setPhoneRaw] = useState('');
+  const [otp, setOtpRaw] = useState('');
+  const [name, setName] = useState('');
+  const [grade, setGrade] = useState<number | null>(null);
+  const [board, setBoard] = useState<string | null>(null);
+  const [prime, setPrime] = useState(false);
 
-  const patchActive = useCallback((patch: Partial<Exam>) => {
-    setS((p) => ({ ...p, exams: p.exams.map((e) => (e.id === p.activeId ? { ...e, ...patch } : e)) }));
+  const [exams, setExams] = useState<ExamRecord[]>([]);
+  const [activeExamId, setActiveExamId] = useState<string | null>(null);
+  const [nodes, setNodes] = useState<ConceptNode[]>([]);
+  const [plan, setPlan] = useState<NextStep | null>(null);
+
+  const [draftSubject, setDraftSubject] = useState<string | null>(null);
+  const [draftDays, setDraftDays] = useState(30);
+  const [draftSyllabus, setDraftSyllabus] = useState('');
+  const [draftFile, setDraftFile] = useState<Attachment | null>(null);
+
+  const [check, setCheck] = useState<CheckState>(emptyCheck());
+  const [result, setResult] = useState<backend.CheckResult | null>(null);
+  const [scan, setScan] = useState<ScanState>({ image: null, match: null });
+  /** Set when a lesson should open on a scanned concept rather than the plan's. */
+  const [scanTarget, setScanTarget] = useState<{
+    conceptId: string; image: ScanState['image'];
+  } | null>(null);
+  /** Queued ask for the tutor after a failed check — consumed by the chat. */
+  const [reteachAsk, setReteachAsk] = useState<string | null>(null);
+
+  const [busy, setBusy] = useState<Busy>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** Handle for the SMS in flight, between sending and confirming the code. */
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  /** Set when signing in had to abandon guest work (credential already used). */
+  const [guestProgressLost, setGuestProgressLost] = useState(false);
+
+  const go = useCallback((r: Route) => setRoute(r), []);
+
+  /**
+   * Android's hardware back. Without this the OS closes the app from every
+   * screen, because this router is a flat switch with no history to pop.
+   * 'login', 'home' and 'exams' are the roots — backing out of those should
+   * genuinely leave the app.
+   */
+  const BACK_TO: Partial<Record<Route, Route>> = useMemo(() => ({
+    otp: 'login',
+    details: 'otp',
+    prime: 'exams',
+    addsub: 'exams',
+    syllabus: 'addsub',
+    nexora: 'home',
+    scan: 'home',
+    check: 'home',
+    checkresult: 'home',
+    progress: 'home',
+    badges: 'progress',
+    friends: 'home',
+    fchat: 'friends',
+    call: 'friends',
+    group: 'friends',
+    parent: 'progress',
+  }), []);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Never strand the student mid-build; that call is already in flight.
+      if (route === 'building') return true;
+      const target = BACK_TO[route];
+      if (!target) return false;
+      setRoute(target);
+      return true;
+    });
+    return () => sub.remove();
+  }, [route, BACK_TO]);
+  const fail = useCallback((e: unknown) => {
+    const known = e instanceof BackendError || e instanceof AuthError;
+    setError(known ? (e as Error).message : (e as Error).message || 'Something went wrong.');
   }, []);
 
-  const digits = s.phone.replace(/\D/g, '');
-  const otpDigits = s.otp.replace(/\D/g, '').slice(0, 4);
+  // ── boot ────────────────────────────────────────────────────────────────
+  // Sign in as a guest so the student has a real uid to hang a graph off
+  // before they ever give us a phone number.
+  const booted = useRef(false);
+  useEffect(() => {
+    if (!isConfigured()) { setAuthReady(true); return; }
+    const stop = watchAuth(async (user) => {
+      if (user) {
+        // Mark boot resolved here too, or signing out later looks like a
+        // first run and silently mints a fresh guest instead of showing login.
+        booted.current = true;
+        setUid(user.uid);
+        setIsGuest(user.isAnonymous);
+        setSignedInAs({ phone: user.phoneNumber, email: user.email });
+        setAuthReady(true);
+      } else if (!booted.current) {
+        // Genuine first run: hand them a uid so the app is usable before
+        // they decide whether to sign up.
+        booted.current = true;
+        setBusy('auth');
+        try { await signInGuest(); } catch (e) { fail(e); setAuthReady(true); }
+        finally { setBusy(null); }
+      } else {
+        // Signed out. Drop every trace of the previous student, or their uid
+        // lingers and the app keeps reading a graph it can no longer see.
+        setUid(null);
+        setIsGuest(true);
+        setSignedInAs({ phone: null, email: null });
+        setExams([]);
+        setActiveExamId(null);
+        setNodes([]);
+        setPlan(null);
+        setName('');
+        setGrade(null);
+        setBoard(null);
+        setPhoneRaw('');
+        setOtpRaw('');
+        setConfirmation(null);
+        setRoute('login');
+        setAuthReady(true);
+      }
+    });
+    return stop;
+  }, [fail]);
+
+  const refreshExams = useCallback(async (id: string) => {
+    const list = await loadExams(id);
+    setExams(list);
+    return list;
+  }, []);
+
+  // Pull whatever this student already has as soon as we know who they are.
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      setBusy('profile');
+      try {
+        const [profile, list] = await Promise.all([loadProfile(uid), loadExams(uid)]);
+        if (cancelled) return;
+        if (profile) {
+          setName(profile.name ?? '');
+          setGrade(profile.grade ?? null);
+          setBoard(profile.board ?? null);
+          // Server-owned: the client shows the plan, it does not grant it.
+          setPrime(profile.prime === true);
+        }
+        setExams(list);
+        // Returning student: skip straight past onboarding.
+        if (profile?.name) {
+          const ready = list.find((e) => e.graphStatus === 'ready');
+          if (ready) { setActiveExamId(ready.id); setRoute('home'); }
+          else setRoute('exams');
+        } else if (!isGuest) {
+          // Genuinely signed in but with no profile yet — finish onboarding.
+          // A guest belongs on the login screen, not in the middle of it.
+          setRoute('details');
+        }
+      } catch (e) {
+        if (!cancelled) fail(e);
+      } finally {
+        if (!cancelled) setBusy(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [uid, isGuest, fail]);
+
+  // ── graph + plan for the active exam ────────────────────────────────────
+  const loadGraph = useCallback(async (examId: string) => {
+    setBusy('plan');
+    setError(null);
+    try {
+      const [graph, next] = await Promise.all([
+        backend.getGraph(examId),
+        backend.nextStep(examId),
+      ]);
+      setNodes(graph.nodes);
+      setPlan(next);
+      return next;
+    } catch (e) {
+      fail(e);
+      return null;
+    } finally {
+      setBusy(null);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (!uid || !activeExamId) return;
+    const exam = exams.find((e) => e.id === activeExamId);
+    if (exam?.graphStatus !== 'ready') return;
+    loadGraph(activeExamId);
+  }, [uid, activeExamId, exams, loadGraph]);
+
+  // ── derived ─────────────────────────────────────────────────────────────
+  const digits = phone.replace(/\D/g, '');
+  const otpDigits = otp.replace(/\D/g, '').slice(0, OTP_LENGTH);
   const phoneOk = digits.length === 10;
-  const otpOk = otpDigits.length === 4;
-  const detailsOk = s.name.trim().length > 1 && s.grade !== null && s.board !== null;
+  const otpOk = otpDigits.length === OTP_LENGTH;
+  const detailsOk = name.trim().length > 1 && grade !== null && board !== null;
 
-  const active = s.exams.find((e) => e.id === s.activeId) || s.exams[0] || null;
-  const st = active ? examStats(active) : null;
-  const ready = s.exams.filter((e) => e.baselineDone);
-  const missingSyllabus = s.exams.filter((e) => !e.syllabus);
-  const others = ready.filter((e) => !active || e.id !== active.id);
-  const second = others[0] || null;
-  const secondStats = second ? examStats(second) : null;
+  const account = { isGuest, phoneNumber: signedInAs.phone, email: signedInAs.email };
 
-  const atCap = s.exams.length >= MAX_EXAMS;
-  const needsPrime = !s.prime && s.exams.length >= FREE_EXAMS;
+  const activeExam = exams.find((e) => e.id === activeExamId) ?? null;
+  const readyExams = exams.filter((e) => e.graphStatus === 'ready');
+  const pendingExams = exams.filter((e) => e.graphStatus !== 'ready');
+  const atCap = exams.length >= MAX_EXAMS;
+  const needsPrime = !prime && exams.length >= FREE_EXAMS;
+  const firstName = name.trim().split(' ')[0] || 'there';
+  const activeName = activeExam?.subject ?? 'your exam';
 
-  const activeName = active ? active.subject : 'your exam';
-  const firstName = s.name.trim().split(' ')[0] || 'there';
-  const readiness = st ? st.readiness : 0;
-  const focus = st ? st.focus : '';
-
-  const taken = s.exams.map((e) => e.subject);
+  const taken = exams.map((e) => e.subject);
   const subjectOptions = CATALOG.filter((c) => taken.indexOf(c.name) < 0);
-  const draftPct = Math.round(((s.draftDays - 3) / (60 - 3)) * 100);
+  const draftPct = Math.round(((draftDays - 3) / (60 - 3)) * 100);
 
-  const q = active && st ? st.cat.qs[s.qi] : null;
-  const qTotal = st ? st.cat.qs.length : 0;
+  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  const focusNode = plan?.conceptId ? byId.get(plan.conceptId) ?? null : null;
+  const readiness = plan ? Math.round(plan.readiness * 100) : 0;
+  const masteredCount = nodes.filter((n) => n.state === 'mastered').length;
 
+  const checkQ = check.questions[check.qi] ?? null;
+  const checkTotal = check.questions.length;
+
+  // ── actions ─────────────────────────────────────────────────────────────
   const actions = useMemo(() => ({
-    setPhone: (v: string) => setS((p) => ({ ...p, phone: v.replace(/[^\d ]/g, '').slice(0, 11) })),
-    setOtp: (v: string) => setS((p) => ({ ...p, otp: v.replace(/\D/g, '').slice(0, 4) })),
-    setName: (v: string) => setS((p) => ({ ...p, name: v })),
-    pickGrade: (g: number) => setS((p) => ({ ...p, grade: g })),
-    pickBoard: (b: string) => setS((p) => ({ ...p, board: b })),
+    setPhone: (v: string) => setPhoneRaw(v.replace(/[^\d ]/g, '').slice(0, 11)),
+    setOtp: (v: string) => setOtpRaw(v.replace(/\D/g, '').slice(0, OTP_LENGTH)),
+    setName,
+    pickGrade: setGrade,
+    pickBoard: setBoard,
+    setDraftDays,
+    setDraftSyllabus,
+    setDraftFile,
+    pickDraftSubject: setDraftSubject,
+    clearError: () => setError(null),
 
     goLogin: () => go('login'),
     goExams: () => go('exams'),
     goPrime: () => go('prime'),
     goHome: () => go('home'),
-    goNexora: () => go('nexora'),
     goProgress: () => go('progress'),
     goBadges: () => go('badges'),
     goFriends: () => go('friends'),
@@ -98,118 +275,287 @@ function useAppStateImpl() {
     goCall: () => go('call'),
     goGroup: () => go('group'),
     goParent: () => go('parent'),
+    goNexora: () => go('nexora'),
 
-    sendCode: () => setS((p) => {
-      const d = p.phone.replace(/\D/g, '');
-      if (d.length !== 10) return p;
-      return { ...p, route: 'otp', otp: '' };
-    }),
-    verifyOtp: () => setS((p) => {
-      const od = p.otp.replace(/\D/g, '').slice(0, 4);
-      if (od.length !== 4) return p;
-      return { ...p, route: 'details' };
-    }),
-    finishDetails: () => setS((p) => {
-      const ok = p.name.trim().length > 1 && p.grade !== null && p.board !== null;
-      if (!ok) return p;
-      return { ...p, route: 'exams' };
-    }),
+    /** Send a real SMS. Only advances once Firebase has accepted the number. */
+    sendCode: async () => {
+      if (!phoneOk || busy === 'auth') return;
+      setBusy('auth');
+      setError(null);
+      try {
+        setConfirmation(await startPhoneSignIn(phone));
+        setOtpRaw('');
+        go('otp');
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
 
-    goAddsub: () => setS((p) => {
-      if (p.exams.length >= MAX_EXAMS) return p;
-      const needsPrimeNow = !p.prime && p.exams.length >= FREE_EXAMS;
-      return { ...p, route: needsPrimeNow ? 'prime' : 'addsub', draftSubject: null };
-    }),
-    pickDraftSubject: (name: string) => setS((p) => ({ ...p, draftSubject: name })),
-    setDraftDays: (n: number) => setS((p) => ({ ...p, draftDays: n })),
-    primeCta: () => setS((p) => {
-      if (p.prime) return { ...p, route: 'addsub', draftSubject: null };
-      return { ...p, prime: true, route: 'addsub', draftSubject: null };
-    }),
-    addExam: (withSyllabus: boolean) => setS((p) => {
-      if (!p.draftSubject || p.exams.length >= MAX_EXAMS) return p;
-      if (!p.prime && p.exams.length >= FREE_EXAMS) return { ...p, route: 'prime' };
-      const id = p.nextId;
-      const exam: Exam = {
-        id, subject: p.draftSubject, days: p.draftDays, dateLabel: dateLabel(p.draftDays),
-        syllabus: withSyllabus, picks: [], baselineDone: false,
-      };
-      return {
-        ...p, exams: p.exams.concat([exam]), nextId: id + 1, activeId: id,
-        draftSubject: null, draftDays: 30,
-        route: withSyllabus ? 'syllabus' : 'exams',
-      };
-    }),
-    openExam: (exam: Exam) => setS((p) => {
-      if (!exam.syllabus) return { ...p, activeId: exam.id, route: 'syllabus' };
-      if (!exam.baselineDone) return { ...p, activeId: exam.id, route: 'quiz', qi: 0, sel: null };
-      return { ...p, activeId: exam.id, route: 'home' };
-    }),
-    examsCta: () => setS((p) => {
-      const readyExams = p.exams.filter((e) => e.baselineDone);
-      if (readyExams.length === 0) return p;
-      return { ...p, activeId: readyExams[0].id, route: 'home' };
-    }),
-    fixMissing: () => setS((p) => {
-      const missing = p.exams.filter((e) => !e.syllabus);
-      if (missing.length === 0) return p;
-      return { ...p, activeId: missing[0].id, route: 'syllabus' };
-    }),
+    verifyOtp: async () => {
+      if (!otpOk || !confirmation || busy === 'auth') return;
+      setBusy('auth');
+      setError(null);
+      try {
+        const result = await confirmPhoneCode(confirmation, otp);
+        setGuestProgressLost(result.guestProgressAbandoned);
+        setConfirmation(null);
+        // Where they land is decided by whether this account already has a
+        // profile — the auth listener loads it and routes accordingly.
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
 
-    startQuiz: () => setS((p) => ({
-      ...p,
-      exams: p.exams.map((e) => (e.id === p.activeId ? { ...e, syllabus: true } : e)),
-      route: 'quiz', qi: 0, sel: null,
-    })),
-    selectOption: (i: number) => setS((p) => ({ ...p, sel: i })),
-    nextQuestion: () => setS((p) => {
-      const activeExam = p.exams.find((e) => e.id === p.activeId) || p.exams[0] || null;
-      if (p.sel === null || !activeExam) return p;
-      const cat = catFor(activeExam.subject);
-      const qTotalNow = cat.qs.length;
-      const picks = (activeExam.picks || []).slice();
-      picks[p.qi] = p.sel;
-      const last = p.qi >= qTotalNow - 1;
-      const exams = p.exams.map((e) => (e.id === activeExam.id
-        ? { ...e, picks, baselineDone: e.baselineDone || last }
-        : e));
-      return last
-        ? { ...p, exams, route: 'result' }
-        : { ...p, exams, qi: p.qi + 1, sel: null };
-    }),
-    resultCta: () => setS((p) => {
-      const missing = p.exams.filter((e) => !e.syllabus).length > 0
-        || p.exams.some((e) => e.syllabus && !e.baselineDone);
-      return { ...p, route: missing ? 'exams' : 'home' };
-    }),
+    signInGoogle: async () => {
+      if (busy === 'auth') return;
+      setBusy('auth');
+      setError(null);
+      try {
+        const result = await signInWithGoogle();
+        if (!result) return;           // cancelled
+        setGuestProgressLost(result.guestProgressAbandoned);
+        // Google gives us a name, so don't make them type it again.
+        if (result.user.displayName && !name) setName(result.user.displayName);
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
 
-    pickSubjectPill: (id: number) => setS((p) => ({ ...p, activeId: id })),
-    goSecond: () => setS((p) => {
-      const activeExam = p.exams.find((e) => e.id === p.activeId) || p.exams[0] || null;
-      const readyExams = p.exams.filter((e) => e.baselineDone);
-      const othersNow = readyExams.filter((e) => !activeExam || e.id !== activeExam.id);
-      const secondNow = othersNow[0] || null;
-      if (!secondNow) return p;
-      return { ...p, activeId: secondNow.id, route: 'nexora' };
-    }),
-  }), [go]);
+    dismissGuestWarning: () => setGuestProgressLost(false),
+
+    /**
+     * Carry on without an account. A guest already exists on first run, but
+     * after a sign-out there is none, so make one on demand.
+     */
+    continueAsGuest: async () => {
+      setBusy('auth');
+      setError(null);
+      try {
+        if (!uid) await signInGuest();
+        go('details');
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    signOut: async () => {
+      setBusy('auth');
+      try {
+        await signOutEverywhere();
+        // The auth listener clears local state and routes back to login.
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    finishDetails: async () => {
+      if (!detailsOk || !uid) return;
+      setBusy('profile');
+      setError(null);
+      try {
+        await saveProfile(uid, { name: name.trim(), grade, board });
+        go('exams');
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    goAddsub: () => {
+      if (atCap) return;
+      setDraftSubject(null);
+      setDraftSyllabus('');
+      setDraftFile(null);
+      go(!prime && exams.length >= FREE_EXAMS ? 'prime' : 'addsub');
+    },
+    /**
+     * There is no payment integration yet, so this cannot grant Prime — the
+     * flag is server-owned and buildGraph enforces the cap regardless. Send
+     * them to add an exam; the backend will refuse with a clear message if
+     * they are over the limit.
+     */
+    primeCta: () => { setDraftSubject(null); go('addsub'); },
+
+    /** Draft is complete — go collect the syllabus the graph is built from. */
+    goSyllabus: () => { if (draftSubject) go('syllabus'); },
+
+    /**
+     * Create the exam and have the backend read its syllabus into a graph.
+     * This is the slow call in the product, so it gets its own screen.
+     */
+    buildExam: async () => {
+      if (!uid || !draftSubject) return;
+      const examId = newExamId();
+      const subject = draftSubject;
+      // Fall back to the catalog's chapter list when nothing was typed, so a
+      // student can get going without hunting for their syllabus sheet.
+      // A file speaks for itself; typed text is only a fallback when there
+      // is neither, so the catalog list does not override a real syllabus.
+      const syllabus = draftSyllabus.trim()
+        || (draftFile ? '' : (CATALOG.find((c) => c.name === subject)?.topics.join('\n') ?? subject));
+
+      setBusy('graph');
+      setError(null);
+      go('building');
+      try {
+        await backend.buildGraph({
+          examId,
+          subject,
+          syllabus,
+          examDate: Date.now() + draftDays * DAY_MS,
+          grade,
+          board,
+          attachment: draftFile
+            ? { kind: draftFile.kind, mediaType: draftFile.mediaType, data: draftFile.data }
+            : undefined,
+        });
+        const list = await refreshExams(uid);
+        setActiveExamId(examId);
+        setDraftSubject(null);
+        setDraftSyllabus('');
+        setDraftFile(null);
+        setDraftDays(30);
+        if (list.find((e) => e.id === examId)?.graphStatus === 'ready') go('home');
+        else go('exams');
+      } catch (e) {
+        // Stay on the building screen — it surfaces the error and offers a way
+        // back. Bouncing to the exam list drops the message on the floor.
+        fail(e);
+        if (uid) await refreshExams(uid);
+      } finally {
+        setBusy(null);
+      }
+    },
+
+    openExam: (examId: string) => {
+      setActiveExamId(examId);
+      const exam = exams.find((e) => e.id === examId);
+      go(exam?.graphStatus === 'ready' ? 'home' : 'exams');
+    },
+    pickSubjectPill: (examId: string) => setActiveExamId(examId),
+    examsCta: () => { if (readyExams[0]) { setActiveExamId(readyExams[0].id); go('home'); } },
+
+    refreshPlan: async () => { if (activeExamId) await loadGraph(activeExamId); },
+
+    resetThread: async () => {
+      if (!activeExamId || !plan?.conceptId) return;
+      try { await backend.resetThread(activeExamId, plan.conceptId); } catch (e) { fail(e); }
+    },
+
+    // ── scan & learn ──────────────────────────────────────────────────────
+
+    goScan: () => { setScan({ image: null, match: null }); setError(null); go('scan'); },
+    resetScan: () => { setScan({ image: null, match: null }); setError(null); },
+    setScanError: (message: string) => setError(message),
+
+    /** Photo in, concept out — matched against this student's own graph. */
+    identifyScan: async (shot: Attachment) => {
+      if (!activeExamId) return;
+      setScan({ image: { mediaType: shot.mediaType, data: shot.data, name: shot.name }, match: null });
+      setBusy('scan');
+      setError(null);
+      try {
+        const match = await backend.identifyScan(activeExamId, {
+          mediaType: shot.mediaType, data: shot.data,
+        });
+        setScan((prev) => ({ ...prev, match }));
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    /**
+     * Open the lesson on what was scanned. The photo rides along with the
+     * first turn so Nexora teaches from their actual page, not a guess at it.
+     */
+    learnFromScan: () => {
+      if (!scan.match?.conceptId) return;
+      setScanTarget({ conceptId: scan.match.conceptId, image: scan.image });
+      go('nexora');
+    },
+
+    // ── the check ─────────────────────────────────────────────────────────
+    startCheck: async () => {
+      if (!activeExamId || !plan?.conceptId) return;
+      setBusy('check');
+      setError(null);
+      setResult(null);
+      setCheck({ ...emptyCheck(), conceptId: plan.conceptId, conceptName: plan.conceptName });
+      go('check');
+      try {
+        const started = await backend.startCheck(activeExamId, plan.conceptId);
+        setCheck((c) => ({ ...c, checkId: started.checkId, questions: started.questions }));
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    /** Commit an answer. The server records it and explains that one question. */
+    answerCheck: async (pick: number) => {
+      if (!activeExamId || !check.checkId || check.revealed) return;
+      setCheck((c) => ({ ...c, sel: pick }));
+      setBusy('answer');
+      try {
+        const revealed = await backend.answerQuestion(activeExamId, check.checkId, check.qi, pick);
+        setCheck((c) => ({ ...c, revealed, picks: withPick(c.picks, c.qi, pick) }));
+      } catch (e) {
+        fail(e);
+        setCheck((c) => ({ ...c, sel: null }));
+      } finally { setBusy(null); }
+    },
+
+    nextCheck: async () => {
+      if (!activeExamId || !check.checkId || !check.revealed) return;
+      if (check.qi < check.questions.length - 1) {
+        setCheck((c) => ({ ...c, qi: c.qi + 1, sel: null, revealed: null }));
+        return;
+      }
+      setBusy('submit');
+      try {
+        const graded = await backend.submitCheck(activeExamId, check.checkId, check.picks);
+        setResult(graded);
+        setPlan(graded.next);
+        go('checkresult');
+        // Mastery moved, so the graph the rest of the app renders is stale.
+        const graph = await backend.getGraph(activeExamId);
+        setNodes(graph.nodes);
+      } catch (e) { fail(e); } finally { setBusy(null); }
+    },
+
+    /**
+     * Failed the check — go back into the lesson and make Nexora come at it
+     * again. The server already knows which questions were missed (it stored
+     * them on the concept), so this only has to ask for a different angle.
+     */
+    reteach: () => {
+      const missed = result?.questions
+        .filter((q, i) => check.picks[i] !== q.answer)
+        .map((q) => q.q) ?? [];
+      setReteachAsk(
+        missed.length
+          ? `I just took the check and got these wrong:\n${missed.map((m) => `- ${m}`).join('\n')}\n`
+            + 'Explain that idea a different way, with a fresh everyday example, then ask me one question about it.'
+          : 'I did not pass that check. Explain it a different way with a fresh example, then ask me one question.',
+      );
+      setCheck(emptyCheck());
+      go('nexora');
+    },
+    consumeReteachAsk: () => setReteachAsk(null),
+    consumeScanTarget: () => setScanTarget(null),
+    finishCheck: () => { setCheck(emptyCheck()); setResult(null); go('home'); },
+  }), [
+    go, fail, uid, phone, otp, phoneOk, otpOk, detailsOk, name, grade, board, atCap, prime,
+    busy, confirmation,
+    exams, draftSubject, draftSyllabus, draftFile, draftDays, activeExamId, plan, check, result, scan,
+    readyExams, loadGraph, refreshExams,
+  ]);
 
   return {
-    s, patchActive,
-    digits, otpDigits, phoneOk, otpOk, detailsOk,
-    active, st, ready, missingSyllabus, second, secondStats,
-    atCap, needsPrime, activeName, firstName, readiness, focus,
-    subjectOptions, draftPct, q, qTotal,
+    route, uid, authReady, busy, error, guestProgressLost, account,
+    phone, otp, name, grade, board, prime,
+    digits, otpDigits, phoneOk, otpOk, detailsOk, firstName,
+    exams, activeExam, activeExamId, activeName, readyExams, pendingExams, atCap, needsPrime,
+    nodes, plan, focusNode, readiness, masteredCount, byId,
+    subjectOptions, draftSubject, draftDays, draftSyllabus, draftFile, draftPct,
+    check, checkQ, checkTotal, result, reteachAsk, scan, scanTarget,
     actions,
   };
+}
+
+function withPick(picks: number[], index: number, pick: number): number[] {
+  const next = picks.slice();
+  next[index] = pick;
+  return next;
 }
 
 type AppContextValue = ReturnType<typeof useAppStateImpl>;
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const value = useAppStateImpl();
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={useAppStateImpl()}>{children}</AppContext.Provider>;
 }
 
 export function useApp() {
@@ -218,4 +564,4 @@ export function useApp() {
   return ctx;
 }
 
-export { examStats, DAY_CHOICES };
+export { DAY_CHOICES, dateLabel };

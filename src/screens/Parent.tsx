@@ -1,20 +1,26 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { BackChevron, Kicker, SectionLabel } from '../components/UI';
 import { GearIcon } from '../components/Icons';
-import { examStats, useApp } from '../state/AppState';
+import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
 
 const WEEK_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const WEEK_STUDIED = [true, true, false, true, true, false, true];
 
 export function ParentScreen() {
-  const { s, active, st, readiness, focus, second, secondStats, activeName, firstName, actions } = useApp();
+  const {
+    activeExam, exams, plan, nodes, readiness, masteredCount, activeName, firstName,
+    busy, account, actions,
+  } = useApp();
+  const accountLabel = account.phoneNumber || account.email || (account.isGuest ? 'guest' : '');
 
-  const parentNote = st
-    ? `${activeName} is at ${readiness}% — ${focus} is the topic holding it back`
-      + (second && secondStats ? `, and ${second.subject} sits at ${secondStats.readiness}%.` : '.')
+  const parentNote = plan && nodes.length > 0
+    ? `${activeName} is at ${readiness}%, with ${masteredCount} of ${nodes.length} concepts proved.`
+      + (plan.action === 'done'
+        ? ' Everything on the syllabus is solid — revision from here.'
+        : ` Right now the work is ${plan.conceptName}.`)
       + ' Ten minutes of reading the question aloud together helps more than extra drills.'
     : "Add an exam and I'll send a weekly read on how it's going.";
 
@@ -50,13 +56,16 @@ export function ParentScreen() {
 
       <SectionLabel>Exams running</SectionLabel>
       <View>
-        {s.exams.map((e) => {
-          const es = examStats(e);
-          const value = e.baselineDone ? `${es.readiness}% ready` : e.syllabus ? 'Baseline pending' : 'Syllabus missing';
+        {exams.map((e) => {
+          const ready = e.graphStatus === 'ready';
+          const isActive = e.id === activeExam?.id;
+          const value = !ready
+            ? (e.graphStatus === 'pending' ? 'Building plan' : 'Plan failed')
+            : isActive ? `${readiness}% ready` : `${e.conceptCount} concepts`;
           return (
             <View key={e.id} style={styles.examRow}>
               <Text style={styles.examName}>{e.subject}</Text>
-              <Text style={[styles.examValue, { color: e.baselineDone ? colors.accent2_700 : colors.neutral600 }]}>{value}</Text>
+              <Text style={[styles.examValue, { color: ready ? colors.accent2_700 : colors.neutral600 }]}>{value}</Text>
             </View>
           );
         })}
@@ -66,11 +75,20 @@ export function ParentScreen() {
         <View style={styles.digestBtn}><Text style={styles.digestBtnText}>Weekly digest on</Text></View>
         <View style={styles.gearBtn}><GearIcon size={22} /></View>
       </View>
+
+      {/* A family phone gets shared, so signing out has to be reachable. */}
+      <Pressable onPress={actions.signOut} disabled={busy === 'auth'} style={styles.signOut}>
+        <Text style={styles.signOutText}>
+          {busy === 'auth' ? 'Signing out…' : `Sign out${accountLabel ? ` (${accountLabel})` : ''}`}
+        </Text>
+      </Pressable>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  signOut: { alignSelf: 'center', paddingVertical: 14, paddingHorizontal: 20 },
+  signOutText: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.accent700 },
   content: { paddingTop: 66, paddingBottom: 40, gap: 18 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   h2: { fontFamily: fonts.heading, fontSize: 27, marginTop: 4, color: colors.text },

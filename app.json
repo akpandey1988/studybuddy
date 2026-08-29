@@ -17,10 +17,40 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.nexora.studybuddy"
+      "package": "com.nexora.studybuddy",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "StudyBuddy uses the camera so you can photograph your syllabus sheet and Nexora can build your study plan from it.",
+          "photosPermission": "StudyBuddy needs your photos so you can pick an existing picture of your syllabus."
+        }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "StudyBuddy uses the microphone so you can talk to Nexora instead of typing.",
+          "speechRecognitionPermission": "StudyBuddy turns what you say into text so Nexora can answer your questions."
+        }
+      ]
+    ],
+    "scheme": "studybuddy",
+    "extra": {
+      "eas": {
+        "projectId": "c07f4fa1-e372-4c19-b363-81c675026e9c"
+      }
+    },
+    "owner": "akpandey1988"
   }
 }

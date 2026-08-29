@@ -15,13 +15,13 @@ const ROWS = [
 ];
 
 export function PrimeScreen() {
-  const { s, actions } = useApp();
+  const { exams, prime, actions } = useApp();
 
-  const headline = s.prime ? 'Prime is on' : 'One exam is free';
-  const body = s.prime
+  const headline = prime ? 'Prime is on' : 'One exam is free';
+  const body = prime
     ? "All eight exam slots are unlocked. Nexora splits every day across them by exam date."
     : `You're using your free exam. Prime unlocks up to eight exams at once, each with its own syllabus, baseline and daily slice.`;
-  const ctaLabel = s.prime ? 'Add another exam' : `Start Prime · ${PRIME_PRICE}/month`;
+  const ctaLabel = prime ? 'Add another exam' : `Start Prime · ${PRIME_PRICE}/month`;
 
   return (
     <Screen style={styles.content}>

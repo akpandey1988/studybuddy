@@ -8,10 +8,10 @@ import { dateLabel } from '../data/catalog';
 import { colors, fonts, radius } from '../theme/tokens';
 
 export function AddExamScreen() {
-  const { s, subjectOptions, draftPct, actions } = useApp();
+  const { draftSubject, draftDays, subjectOptions, actions } = useApp();
 
-  const draftNote = s.draftSubject
-    ? `${s.draftSubject} in ${s.draftDays} days — that's ${dateLabel(s.draftDays)}. You can add the syllabus now or later.`
+  const draftNote = draftSubject
+    ? `${draftSubject} in ${draftDays} days — that's ${dateLabel(draftDays)}. Next, your syllabus.`
     : 'Pick the subject, then how far away the exam is.';
 
   return (
@@ -25,7 +25,7 @@ export function AddExamScreen() {
         <Text style={styles.label}>Subject</Text>
         <View style={styles.subjectRow}>
           {subjectOptions.map((c) => (
-            <Chip key={c.name} label={c.name} active={s.draftSubject === c.name} onPress={() => actions.pickDraftSubject(c.name)} />
+            <Chip key={c.name} label={c.name} active={draftSubject === c.name} onPress={() => actions.pickDraftSubject(c.name)} />
           ))}
         </View>
       </View>
@@ -34,14 +34,14 @@ export function AddExamScreen() {
         <Text style={styles.label}>Exam date</Text>
         <Card style={{ gap: 16, padding: 18 }}>
           <View style={styles.dateHeaderRow}>
-            <Text style={styles.dateLabel}>{dateLabel(s.draftDays)}</Text>
-            <Text style={styles.daysAway}>{s.draftDays} days away</Text>
+            <Text style={styles.dateLabel}>{dateLabel(draftDays)}</Text>
+            <Text style={styles.daysAway}>{draftDays} days away</Text>
           </View>
           <Slider
             minimumValue={3}
             maximumValue={60}
             step={1}
-            value={s.draftDays}
+            value={draftDays}
             onValueChange={actions.setDraftDays}
             minimumTrackTintColor={colors.accent400}
             maximumTrackTintColor={colors.neutral200}
@@ -57,9 +57,11 @@ export function AddExamScreen() {
       <NexoraNote text={draftNote} />
 
       <View style={{ marginTop: 'auto' as const, gap: 10 }}>
-        <CtaButton label="Add syllabus now" active={!!s.draftSubject} onPress={() => actions.addExam(true)} />
-        <Pressable onPress={() => actions.addExam(false)} style={styles.laterBtn}>
-          <Text style={[styles.laterLabel, { color: s.draftSubject ? colors.neutral800 : colors.neutral500 }]}>I'll add the syllabus later</Text>
+        <CtaButton label="Next: your syllabus" active={!!draftSubject} onPress={actions.goSyllabus} />
+        <Pressable onPress={() => draftSubject && actions.buildExam()} style={styles.laterBtn}>
+          <Text style={[styles.laterLabel, { color: draftSubject ? colors.neutral800 : colors.neutral500 }]}>
+            Use the standard {draftSubject ?? ''} syllabus
+          </Text>
         </Pressable>
       </View>
     </Screen>

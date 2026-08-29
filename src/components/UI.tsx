@@ -16,6 +16,17 @@ export function CtaButton({
   );
 }
 
+// ── Outlined companion to CtaButton, for the lower-weight of two actions ──
+export function SecondaryButton({
+  label, onPress, style,
+}: { label: string; onPress: () => void; style?: ViewStyle }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.cta, styles.ctaSecondary, style]}>
+      <Text style={[styles.ctaLabel, { color: colors.neutral700 }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 // ── Selectable chip (matches the dc.html `chip(on)` helper) ───────────────
 export function Chip({
   label, onPress, active = false, style, textStyle,
@@ -71,6 +82,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctaOn: { backgroundColor: colors.accent, ...shadow.md },
+  ctaSecondary: { backgroundColor: 'transparent', borderWidth: 2, borderColor: colors.neutral300 },
   ctaOff: { backgroundColor: colors.neutral200 },
   ctaLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 17 },
 

@@ -1,55 +1,40 @@
-import type { Subject } from '../data/catalog';
-
 export type Route =
   | 'login' | 'otp' | 'details'
   | 'exams' | 'prime' | 'addsub' | 'syllabus'
-  | 'quiz' | 'result'
-  | 'home' | 'nexora' | 'progress' | 'badges'
+  | 'building'
+  | 'home' | 'nexora' | 'scan' | 'check' | 'checkresult' | 'progress' | 'badges'
   | 'friends' | 'fchat' | 'call' | 'group' | 'parent';
 
-export type Exam = {
-  id: number;
-  subject: string;
-  days: number;
-  dateLabel: string;
-  syllabus: boolean;
-  picks: (number | undefined)[];
-  baselineDone: boolean;
-};
+export type { ConceptNode, NextStep, CheckQuestion, GradedQuestion, CheckResult } from '../services/backend';
+export type { ExamRecord, Profile } from '../services/store';
 
-export type AppData = {
-  route: Route;
-  phone: string;
-  otp: string;
-  name: string;
-  grade: number | null;
-  board: string | null;
-  prime: boolean;
-  exams: Exam[];
-  activeId: number | null;
+/** A check in flight. The answer key stays on the server. */
+export type CheckState = {
+  conceptId: string | null;
+  conceptName: string;
+  checkId: string | null;
+  questions: { q: string; opts: string[] }[];
   qi: number;
   sel: number | null;
-  draftSubject: string | null;
-  draftDays: number;
-  nextId: number;
+  /** Set once the server has recorded the pick and returned its explanation. */
+  revealed: { correct: boolean; answer: number; why: string } | null;
+  picks: number[];
 };
 
-export type TopicLevel = 'Not tested' | 'Needs work' | 'Getting there' | 'Strong';
-
-export type TopicStat = {
-  name: string;
-  level: number; // 0-5
-  label: TopicLevel;
+/** A photographed page or question, and what Nexora made of it. */
+export type ScanState = {
+  image: { mediaType: string; data: string; name: string } | null;
+  match: import('../services/backend').ScanMatch | null;
 };
 
-export type ExamStats = {
-  cat: Subject;
-  correct: number;
-  readiness: number;
-  topics: TopicStat[];
-  weak: string[];
-  mid: string[];
-  untested: string[];
-  focus: string;
-  allStrong: boolean;
-};
+export type Busy =
+  | null
+  | 'auth'
+  | 'profile'
+  | 'exams'
+  | 'graph'
+  | 'plan'
+  | 'check'
+  | 'answer'
+  | 'submit'
+  | 'scan';
