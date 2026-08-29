@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { CtaButton, Spacer } from '../components/UI';
 import { GoogleMark } from '../components/Icons';
+import { HeroBlobs, Nexora } from '../components/Art';
+import { PressableScale } from '../components/Motion';
 import { useApp } from '../state/AppState';
 import { colors, fonts } from '../theme/tokens';
 
@@ -12,11 +14,12 @@ export function LoginScreen() {
 
   return (
     <Screen style={styles.content}>
-      <View style={styles.avatar}><Text style={styles.avatarText}>N</Text></View>
+      <HeroBlobs height={300} />
 
-      <View style={{ gap: 10 }}>
+      <View style={styles.intro}>
+        <Nexora size={132} mood="happy" />
         <Text style={styles.h1}>Hello, I'm Nexora</Text>
-        <Text style={styles.body}>Your study buddy for the next exam. Sign in with your phone number — that's all we need.</Text>
+        <Text style={styles.body}>Your study buddy for the next exam.</Text>
       </View>
 
       <View style={{ gap: 8 }}>
@@ -33,7 +36,7 @@ export function LoginScreen() {
             style={styles.phoneInput}
           />
         </View>
-        <Text style={styles.helper}>We'll text you a code. A parent's number works too.</Text>
+        <Text style={styles.helper}>We'll text you a code.</Text>
         {error && <Text style={styles.error}>{error}</Text>}
       </View>
 
@@ -52,10 +55,10 @@ export function LoginScreen() {
           <View style={styles.orLine} />
         </View>
 
-        <Pressable onPress={actions.signInGoogle} disabled={working} style={[styles.google, working && styles.googleBusy]}>
+        <PressableScale onPress={actions.signInGoogle} disabled={working} style={styles.google}>
           <GoogleMark size={20} />
           <Text style={styles.googleLabel}>Continue with Google</Text>
-        </Pressable>
+        </PressableScale>
 
         {/* The app hands out an anonymous uid on first run, so this has to be
             reachable — otherwise "guest" is a promise the UI never keeps. */}
@@ -70,14 +73,10 @@ export function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 92, paddingBottom: 40, gap: 24 },
-  avatar: {
-    width: 84, height: 84, borderRadius: 999, backgroundColor: colors.accent2_500,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { fontFamily: fonts.heading, fontSize: 38, color: '#fff' },
-  h1: { fontFamily: fonts.heading, fontSize: 34, lineHeight: 36, color: colors.text },
-  body: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.neutral700 },
+  content: { paddingTop: 56, paddingBottom: 40, gap: 24 },
+  intro: { alignItems: 'center', gap: 12 },
+  h1: { fontFamily: fonts.heading, fontSize: 32, lineHeight: 36, color: colors.text, textAlign: 'center' },
+  body: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.neutral700, textAlign: 'center' },
   label: {
     fontFamily: fonts.bodyExtraBold, fontSize: 13, fontWeight: '800',
     letterSpacing: 1, textTransform: 'uppercase', color: colors.neutral600,
@@ -103,7 +102,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderWidth: 2, borderColor: colors.neutral300,
     borderRadius: 999, paddingVertical: 15,
   },
-  googleBusy: { opacity: 0.6 },
   googleLabel: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 16, color: colors.neutral800 },
   guest: {
     fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15,

@@ -3,6 +3,8 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View
 import { FixedScreen } from '../components/Screen';
 import { BackChevron, CtaButton, SecondaryButton } from '../components/UI';
 import { CameraIcon, UploadIcon } from '../components/Icons';
+import { Nexora } from '../components/Art';
+import { PressableScale, Rise } from '../components/Motion';
 import { SyllabusInputError, captureSyllabusPhoto, pickSyllabusImage } from '../services/syllabusInput';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius, shadow } from '../theme/tokens';
@@ -36,24 +38,28 @@ export function ScanScreen() {
         <ScrollView contentContainerStyle={{ gap: 16 }} showsVerticalScrollIndicator={false}>
           {!scan.image && !scan.match && (
             <>
-              <Text style={styles.intro}>
-                Stuck on a question, or want a page explained? Photograph it and Nexora
-                will teach it — using where it sits in your own syllabus.
-              </Text>
-              <Pressable onPress={() => capture(true)} disabled={working} style={styles.source}>
-                <View style={styles.sourceIcon}><CameraIcon size={22} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sourceTitle}>Take a photo</Text>
-                  <Text style={styles.sourceHint}>A question, a page, or your working</Text>
-                </View>
-              </Pressable>
-              <Pressable onPress={() => capture(false)} disabled={working} style={styles.source}>
-                <View style={styles.sourceIcon}><UploadIcon size={22} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sourceTitle}>Choose a photo</Text>
-                  <Text style={styles.sourceHint}>From your gallery</Text>
-                </View>
-              </Pressable>
+              <View style={styles.introWrap}>
+                <Nexora size={116} mood="thinking" />
+                <Text style={styles.intro}>Photograph it and I'll teach it.</Text>
+              </View>
+              <Rise delay={60}>
+                <PressableScale onPress={() => capture(true)} disabled={working} style={styles.source}>
+                  <View style={styles.sourceIcon}><CameraIcon size={22} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sourceTitle}>Take a photo</Text>
+                    <Text style={styles.sourceHint}>A question, a page, or your working</Text>
+                  </View>
+                </PressableScale>
+              </Rise>
+              <Rise delay={130}>
+                <PressableScale onPress={() => capture(false)} disabled={working} style={styles.source}>
+                  <View style={styles.sourceIcon}><UploadIcon size={22} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sourceTitle}>Choose a photo</Text>
+                    <Text style={styles.sourceHint}>From your gallery</Text>
+                  </View>
+                </PressableScale>
+              </Rise>
             </>
           )}
 
@@ -118,7 +124,11 @@ const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: 24, paddingTop: 66, paddingBottom: 40, gap: 18 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   h2: { fontFamily: fonts.heading, fontSize: 28, lineHeight: 31, color: colors.text },
-  intro: { fontFamily: fonts.body, fontSize: 15, lineHeight: 22, color: colors.neutral700 },
+  introWrap: { alignItems: 'center', gap: 10, paddingBottom: 4 },
+  intro: {
+    fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 16,
+    lineHeight: 22, color: colors.neutral700, textAlign: 'center',
+  },
   source: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 2, borderColor: colors.neutral200,
