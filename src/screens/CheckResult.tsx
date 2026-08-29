@@ -2,12 +2,17 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { FixedScreen } from '../components/Screen';
 import { CtaButton, SecondaryButton } from '../components/UI';
+import { Burst, Nexora, ProgressRing } from '../components/Art';
+import { PressableScale, Rise } from '../components/Motion';
 import { useApp } from '../state/AppState';
 import { colors, fonts, radius } from '../theme/tokens';
 
 /** Everything here comes from the server's grading — nothing is scored locally. */
 export function CheckResultScreen() {
   const { check, result, nodes, actions } = useApp();
+  // Every question, its answer and its explanation is a long read to land on
+  // straight after a check. It's all still here, one tap away.
+  const [showAll, setShowAll] = React.useState(false);
 
   if (!result) {
     return (
@@ -24,31 +29,38 @@ export function CheckResultScreen() {
   const { score, outOf, passed, passMark, next } = result;
   const learned = nodes.filter((n) => n.state === 'mastered').length;
 
-  const title = passed ? `You got it —\n${topic}` : 'Nearly —\nlet’s go again';
+  const title = passed ? 'You got it' : 'Nearly';
   const note = passed
-    ? `${score} of ${outOf} right. ${topic} is marked learned.`
-    : `${score} of ${outOf} right — you need ${passMark}. Nexora will come at it a different way, then a fresh check.`;
+    ? `${topic} is marked learned.`
+    : `You need ${passMark}. Nexora will come at it a different way.`;
+  const pct = outOf ? (score / outOf) * 100 : 0;
+  const ringColor = passed ? colors.accent2_500 : colors.accent;
 
   return (
     <FixedScreen>
       <View style={styles.content}>
       <ScrollView contentContainerStyle={{ gap: 16 }} showsVerticalScrollIndicator={false}>
-        <View style={[styles.badge, passed ? styles.badgePass : styles.badgeRetry]}>
-          <Text style={[styles.badgeText, { color: passed ? colors.accent2_800 : colors.accent800 }]}>
-            {passed ? 'PASSED' : 'NOT YET'}
+        {/* The number, the face and the verdict in one glance. */}
+        <Rise>
+          <View style={styles.hero}>
+            {passed && <Burst size={230} color={colors.accent2_300} />}
+            <ProgressRing value={pct} size={150} stroke={14} color={ringColor}>
+              <Text style={styles.scoreValue}>{score}<Text style={styles.scoreOf}>/{outOf}</Text></Text>
+            </ProgressRing>
+            <Nexora size={104} mood={passed ? 'cheer' : 'oops'} />
+            <Text style={styles.h2}>{title}</Text>
+            <Text style={styles.scoreNote}>{note}</Text>
+          </View>
+        </Rise>
+
+        <PressableScale onPress={() => setShowAll((v) => !v)} style={styles.reviewToggle} to={0.98}>
+          <Text style={styles.reviewToggleText}>
+            {showAll ? 'Hide the answers' : `Go through all ${result.questions.length} questions`}
           </Text>
-        </View>
+          <Text style={styles.reviewChevron}>{showAll ? '⌃' : '⌄'}</Text>
+        </PressableScale>
 
-        <Text style={styles.h2}>{title}</Text>
-
-        <View style={[styles.scoreCard, passed ? styles.scorePass : styles.scoreRetry]}>
-          <Text style={styles.scoreValue}>{score}<Text style={styles.scoreOf}> / {outOf}</Text></Text>
-          <Text style={styles.scoreNote}>{note}</Text>
-        </View>
-
-        {/* The whole paper, now that it's graded and the key can be shown. */}
-        <Text style={styles.sectionLabel}>Every question</Text>
-        <View style={{ gap: 10 }}>
+        <View style={{ gap: 10, display: showAll ? 'flex' : 'none' }}>
           {result.questions.map((q, i) => {
             const picked = check.picks[i];
             const right = picked === q.answer;
@@ -101,20 +113,19 @@ export function CheckResultScreen() {
 
 const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: 24, paddingTop: 66, paddingBottom: 40, gap: 12 },
-  badge: { alignSelf: 'flex-start', borderRadius: 999, paddingVertical: 7, paddingHorizontal: 14 },
-  badgePass: { backgroundColor: colors.accent2_100 },
-  badgeRetry: { backgroundColor: colors.accent100 },
-  badgeText: { fontFamily: fonts.bodyExtraBold, fontWeight: '800', fontSize: 12, letterSpacing: 1 },
-  h2: { fontFamily: fonts.heading, fontSize: 30, lineHeight: 34, color: colors.text },
-  scoreCard: { borderRadius: radius.lg, padding: 22, gap: 10 },
-  scorePass: { backgroundColor: colors.accent2_100 },
-  scoreRetry: { backgroundColor: colors.accent100 },
-  scoreValue: { fontFamily: fonts.heading, fontSize: 44, color: colors.text },
-  scoreOf: { fontSize: 24, color: colors.neutral600 },
-  scoreNote: { fontFamily: fonts.body, fontSize: 15, lineHeight: 22, color: colors.neutral800 },
-  sectionLabel: {
-    fontFamily: fonts.bodyExtraBold, fontSize: 12, fontWeight: '800',
-    letterSpacing: 1, textTransform: 'uppercase', color: colors.neutral600, marginTop: 6,
+  hero: { alignItems: 'center', gap: 10, paddingVertical: 6 },
+  reviewToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#fff', borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 16,
+  },
+  reviewToggleText: { fontFamily: fonts.bodyBold, fontWeight: '700', fontSize: 15, color: colors.text },
+  reviewChevron: { fontFamily: fonts.bodyBold, fontSize: 20, color: colors.neutral500 },
+  h2: { fontFamily: fonts.heading, fontSize: 30, lineHeight: 34, color: colors.text, textAlign: 'center' },
+  scoreValue: { fontFamily: fonts.heading, fontSize: 38, color: colors.text },
+  scoreOf: { fontSize: 20, color: colors.neutral600 },
+  scoreNote: {
+    fontFamily: fonts.body, fontSize: 15, lineHeight: 22,
+    color: colors.neutral700, textAlign: 'center',
   },
   qRow: { borderRadius: radius.md, borderWidth: 2, padding: 14, gap: 4 },
   qRight: { backgroundColor: '#fff', borderColor: colors.accent2_300 },
